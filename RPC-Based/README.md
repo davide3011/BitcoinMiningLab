@@ -2,60 +2,60 @@
 
 Questo repository contiene diversi script Python che implementano un miner di Bitcoin per testnet o regtest. L'obiettivo principale di questo progetto rimane didattico, con uno script dettagliato che permette di comprendere le basi del mining, e versioni ottimizzate per esplorare miglioramenti di efficienza.
 
-## ?? Scopo del progetto
+## 🎯 Scopo del progetto
 
 Questi script sono pensati per chi vuole comprendere il funzionamento del mining in modo chiaro e dettagliato.
 
-## ?? Cosa puoi imparare:
+## 🔹 Cosa puoi imparare:
 
 - Come un nodo Bitcoin fornisce un template di blocco per il mining.
 
 - Come vengono costruiti i blocchi, a partire dalla transazione coinbase fino al Merkle Root.
 
-- Il processo di hashing e la ricerca di un nonce valido per soddisfare la difficolt� richiesta.
+- Il processo di hashing e la ricerca di un nonce valido per soddisfare la difficoltà richiesta.
 
 - L'invio del blocco minato al nodo per la validazione.
 
 - Le differenze tra mining in testnet e regtest per scopi di sviluppo e sperimentazione.
 
-Questo progetto � utile per chiunque voglia approfondire il protocollo Bitcoin e il ruolo del mining nella sicurezza della rete. Non � pensato per il mining competitivo, ma come base per la comprensione del processo.
+Questo progetto è utile per chiunque voglia approfondire il protocollo Bitcoin e il ruolo del mining nella sicurezza della rete. Non è pensato per il mining competitivo, ma come base per la comprensione del processo.
 
-## ?? Struttura degli script
+## 📌 Struttura degli script
 
 Il repository contiene i seguenti file principali:
 
 **miner_debug.py:** Script didattico che permette di comprendere passo per passo ogni fase del processo di mining. Contiene numerosi punti di debug utili per studiare il flusso del programma e analizzare i dati intermedi.
 
-**miner_opt.py:** Una versione ottimizzata del miner, senza i punti di debug, per testare un'implementazione pi� snella ed efficiente.
+**miner_opt.py:** Una versione ottimizzata del miner, senza i punti di debug, per testare un'implementazione più snella ed efficiente.
 
-## ??? Funzioni principali
+## 🏗️ Funzioni principali
 
 Entrambi gli script seguono lo stesso flusso base ma con differenze in termini di ottimizzazione e debug.
 Ecco le fasi principali comuni:
 
-### 1?? Connessione al nodo Bitcoin
+### 1️⃣ Connessione al nodo Bitcoin
 
 La funzione test_rpc_connection() verifica che la connessione RPC funzioni correttamente e stampa informazioni sulla blockchain.
 
-### 2?? Ottenere il template del blocco
+### 2️⃣ Ottenere il template del blocco
 
-La funzione get_block_template() richiede un template di blocco contenente transazioni e target di difficolt�.
+La funzione get_block_template() richiede un template di blocco contenente transazioni e target di difficoltà.
 
-### 3?? Creazione della transazione coinbase
+### 3️⃣ Creazione della transazione coinbase
 
 La funzione build_coinbase_transaction(template) crea la coinbase transaction che include la ricompensa per il miner.
 
-### 4?? Calcolo del Merkle Root
+### 4️⃣ Calcolo del Merkle Root
 
 La funzione calculate_merkle_root(coinbase_tx, transactions) calcola la radice di Merkle per le transazioni del blocco.
 
-### 5?? Costruzione dell'header del blocco
+### 5️⃣ Costruzione dell'header del blocco
 
 La funzione build_block_header() crea l'intestazione del blocco concatenando versione, hash del blocco precedente, Merkle Root, timestamp, bits e nonce.
 
-### 6?? Mining del blocco (con scelta del metodo di elaborazione del nonce)
+### 6️⃣ Mining del blocco (con scelta del metodo di elaborazione del nonce)
 
-Nella versione ottimizzata � possibile scegliere tra due modalit� per elaborare i nonce:
+Nella versione ottimizzata è possibile scegliere tra due modalità per elaborare i nonce:
 
 #### Progressiva 
 Esplora i nonce in maniera incrementale, partendo da zero e avanzando di 1 fino al valore massimo possibile.
@@ -88,7 +88,7 @@ def mine_block(header_hex, target_hex):
 
         nonce += 1
 
-    print("\n? Non � stato trovato un hash valido.")
+    print("\n? Non è stato trovato un hash valido.")
     return None, None
 ```
 
@@ -124,7 +124,7 @@ def mine_block(header_hex, target_hex):
         if attempts % 100000 == 0:
             print(f"?? Tentativi: {attempts:,} | Ultimo nonce testato: {nonce} | Hash: {block_hash}")
 
-        # Controlla se il nonce trovato � valido
+        # Controlla se il nonce trovato è valido
         if int(block_hash, 16) < target:
             print(f"\n? Blocco trovato! ??")
             print(f"?? Nonce valido: {nonce}")
@@ -133,23 +133,23 @@ def mine_block(header_hex, target_hex):
             return hexlify(full_header).decode(), nonce
 ```
 
-### 7?? Invio del blocco
+### 7️⃣ Invio del blocco
 
 Dopo aver trovato un nonce valido, lo script:
 
-Verifica la validit� dell'header con ```submit_block_header()```.
+Verifica la validità dell'header con ```submit_block_header()```.
 
 Serializza l'intero blocco con ```serialize_block()```.
 
 Invia il blocco al nodo Bitcoin con ```submit_block()```.
 
-## ?? Prerequisiti
+## 🚀 Prerequisiti
 
 ### 1. Nodo Bitcoin
 
 Assicurati di avere un nodo Bitcoin in esecuzione con il supporto per le chiamate RPC. Configura il file bitcoin.conf come segue:
 
-#### ?? Esempio di bitcoin.conf
+#### 📄 Esempio di bitcoin.conf
 ```
 regtest=1  # Se vuoi eseguire in regtest, altrimenti commenta questa linea
 testnet4=1  # Se vuoi eseguire in testnet, altrimenti commenta questa linea
@@ -168,9 +168,9 @@ Avvia il nodo e aspetta che si configuri completamente.
 
 Installa i moduli richiesti eseguendo:
 ```bash
-pip install python-bitcoinrpc
+pip install -r requirements.txt
 ```
-## ?? Configurazione
+## 🔧 Configurazione
 
 Entrambi gli script contengono i parametri di connessione RPC:
 ```
@@ -187,7 +187,7 @@ Inoltre, specifica l'indirizzo Bitcoin del miner per ricevere la ricompensa:
 MINER_ADDRESS = "indirizzo_bitcoin"
 ```
 
-## ?? Esecuzione degli script
+## 📜 Esecuzione degli script
 
 Per avviare il miner con debug attivato:
 
@@ -201,10 +201,10 @@ Per avviare la versione ottimizzata senza debug:
 python miner_opt.py
 ```
 
-## ?? Nota
+## 📌 Nota
 
-Questi script possono essere utilizzati sia per testnet che per regtest, a seconda della configurazione del nodo. Per implementare un miner pi� efficiente, considera l'uso del protocollo Stratum e hardware dedicato.
+Questi script possono essere utilizzati sia per testnet che per regtest, a seconda della configurazione del nodo. Per implementare un miner più efficiente, considera l'uso del protocollo Stratum e hardware dedicato.
 
-## ?? Licenza
+## 📜 Licenza
 
-Questo progetto � open-source e disponibile sotto la licenza MIT.
+Questo progetto è open-source e disponibile sotto la licenza MIT.
