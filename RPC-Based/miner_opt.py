@@ -1,18 +1,30 @@
 from bitcoinrpc.authproxy import AuthServiceProxy
-import struct
-import hashlib
-import os
-import random
+import struct, hashlib, os, random, json
 from binascii import unhexlify, hexlify
 
-# Configurazione RPC
-RPC_USER = "..."
-RPC_PASSWORD = "..."
-RPC_HOST = "..."
-RPC_PORT = "..."
+# ============================================================================
+#                      CARICAMENTO PARAMETRI CONFIGURAZIONE
+# ============================================================================
+def load_config(file_path='conf.json'):
+    try:
+        with open(file_path, 'r') as file:
+            config = json.load(file)
+        return config
+    except FileNotFoundError:
+        print("Errore: Il file di configurazione conf.json non è stato trovato.")
+        exit(1)
+    except json.JSONDecodeError:
+        print("Errore: Il file conf.json contiene un formato non valido.")
+        exit(1)
+            
+# Caricamento configurazione
+config = load_config()
 
-# Indirizzo del miner
-MINER_ADDRESS = "...."
+RPC_USER = config["rpcuser"]
+RPC_PASSWORD = config["rpcpassword"]
+RPC_HOST = config["rpcaddress"]
+RPC_PORT = config["rpcport"]
+MINER_ADDRESS = config["wallet_address"]
 
 # ============================================================================
 #                          FUNZIONI DI SUPPORTO
@@ -20,16 +32,16 @@ MINER_ADDRESS = "...."
 
 def test_rpc_connection():
     """ Verifica la connessione al nodo Bitcoin. """
-    print("=== STEP 1: Verifichiamo la connessione RPC ===")
+    print("=== Verifica connessione RPC ===")
     try:
         rpc = connect_rpc()
         info = rpc.getblockchaininfo()
-        print("\n? Connessione riuscita!")
-        print(f"?? Chain: {info['chain']}")
-        print(f"?? Blocchi: {info['blocks']}")
-        print(f"? Difficoltà: {info['difficulty']}")
+        print("\nConnessione riuscita!")
+        print(f"Chain: {info['chain']}")
+        print(f"Blocchi: {info['blocks']}")
+        print(f"Difficoltà: {info['difficulty']}")
     except Exception as e:
-        print(f"\n? Errore di connessione: {e}")
+        print(f"\nErrore di connessione: {e}")
         raise
 
 def connect_rpc():
@@ -51,7 +63,7 @@ def get_block_template(rpc):
     try:
         return rpc.getblocktemplate({"rules": ["segwit"]})
     except Exception as e:
-        print(f"? Errore nel recupero del template: {e}")
+        print(f"Errore nel recupero del template: {e}")
         return None
 
 def ensure_witness_data(rpc, template):
@@ -60,7 +72,7 @@ def ensure_witness_data(rpc, template):
     try:
         mempool_info = rpc.getrawmempool(True)
     except Exception as e:
-        print(f"? Errore nel recupero della mempool: {e}")
+        print(f"Errore nel recupero della mempool: {e}")
         mempool_info = {}
     
     for tx in template["transactions"]:
@@ -77,7 +89,7 @@ def ensure_witness_data(rpc, template):
             if raw_tx_full:
                 raw = raw_tx_full
         except Exception as e:
-            print(f"?? Impossibile recuperare raw witness di {txid}: {e}")
+            print(f"Impossibile recuperare raw witness di {txid}: {e}")
         
         corrected_txs.append({"hash": txid, "data": raw})
     
@@ -167,8 +179,8 @@ def build_block_header(version, prev_hash, merkle_root, timestamp, bits, nonce):
 
 def mine_block(header_hex, target_hex):
     """Esegue il mining cercando un nonce casuale e stampa il progresso ogni 100.000 tentativi."""
-    print("\n=== STEP 7: Inizio del Mining ===")
-    print("\n?? Iniziando il mining con nonce randomico...")
+    print("\n=== Inizio del Mining ===")
+    print("\nIniziando il mining con nonce randomico...")
 
     target = int(target_hex, 16)
     base_header = unhexlify(header_hex[:152])  # Converti solo la parte fissa dell'header una volta
@@ -187,33 +199,33 @@ def mine_block(header_hex, target_hex):
 
         # Stampa i progressi ogni 100.000 tentativi
         if attempts % 100000 == 0:
-            print(f"?? Tentativi: {attempts:,} | Ultimo nonce testato: {nonce} | Hash: {block_hash}")
+            print(f"Tentativi: {attempts:,} | Ultimo nonce testato: {nonce} | Hash: {block_hash}")
 
         # Controlla se il nonce trovato è valido
         if int(block_hash, 16) < target:
-            print(f"\n? Blocco trovato! ??")
-            print(f"?? Nonce valido: {nonce}")
-            print(f"?? Hash del blocco: {block_hash}")
-            print(f"?? Tentativi totali: {attempts:,}")
+            print(f"\nBlocco trovato! ??")
+            print(f"Nonce valido: {nonce}")
+            print(f"Hash del blocco: {block_hash}")
+            print(f"Tentativi totali: {attempts:,}")
             return hexlify(full_header).decode(), nonce
     
 def submit_block_header(rpc, header_hex):
     """Invia solo l'header del blocco al nodo Bitcoin per verificarne la validità."""
-    print("\n=== TEST: Invio dell'header del blocco al nodo ===")
+    print("\n=== Verifica header ===")
 
     try:
         result = rpc.submitheader(header_hex)
         if result is None:
-            print("\n? Header accettato dal nodo! Il blocco è collegato correttamente.")
+            print("\nHeader accettato dal nodo! Il blocco è collegato correttamente.")
             return True
-        print(f"\n? Errore nell'invio dell'header: {result}")
+        print(f"\nErrore nell'invio dell'header: {result}")
     except Exception as e:
-        print(f"\n? Errore RPC in submitheader: {e}")
+        print(f"\nErrore RPC in submitheader: {e}")
     return False
 def serialize_block(header_hex, coinbase_tx, transactions):
     """Serializza l'intero blocco nel formato richiesto dal protocollo Bitcoin."""
-    print("\n=== STEP 8: Serializzazione del blocco ===")
-    print("\n?? Serializzando il blocco...")
+    print("\n=== Serializzazione del blocco ===")
+    print("\nSerializzando il blocco...")
 
     num_tx = len(transactions) + 1  # Include la coinbase
     num_tx_hex = encode_varint(num_tx)  # Già in formato hex
@@ -221,34 +233,34 @@ def serialize_block(header_hex, coinbase_tx, transactions):
     try:
         transactions_hex = "".join(tx["data"] for tx in transactions)
     except KeyError as e:
-        print(f"? Errore: una transazione manca del campo '{e}'")
+        print(f"Errore: una transazione manca del campo '{e}'")
         return None
 
     block_hex = header_hex + num_tx_hex + coinbase_tx + transactions_hex
 
-    print("\n? Blocco serializzato correttamente!")
-    print(f"?? Numero transazioni = {num_tx}")
-    print(f"?? Blocco HEX:\n{block_hex}")
+    print("\nBlocco serializzato correttamente!")
+    print(f"Numero transazioni = {num_tx}")
+    print(f"Blocco HEX:\n{block_hex}")
 
     return block_hex
 
 def submit_block(rpc, serialized_block):
     """Invia il blocco minato al nodo Bitcoin."""
-    print("\n=== STEP 9: Invio del blocco al nodo Bitcoin ===")
-    print("\n?? Inviando il blocco al nodo Bitcoin...")
+    print("\n=== Invio del blocco al nodo Bitcoin ===")
+    print("\nInviando il blocco al nodo Bitcoin...")
 
     if not serialized_block:
-        print("? Blocco non serializzato correttamente. Annullando l'invio.")
+        print("Blocco non serializzato correttamente. Annullando l'invio.")
         return
 
     try:
         result = rpc.submitblock(serialized_block)
         if result is None:
-            print("\n? Blocco accettato nella blockchain! ??")
+            print("\nBlocco accettato nella blockchain! ??")
         else:
-            print(f"\n? Errore nell'invio del blocco: {result}")
+            print(f"\nErrore nell'invio del blocco: {result}")
     except Exception as e:
-        print(f"\n? Errore RPC durante submitblock: {e}")   
+        print(f"\nErrore RPC durante submitblock: {e}")   
     
 # =============================================================================
 #                               MAIN SCRIPT
@@ -263,7 +275,7 @@ if __name__ == "__main__":
     # STEP 2) GET BLOCK TEMPLATE
     template = get_block_template(rpc)
     if not template:
-        print("\n? ERRORE: Impossibile ottenere il template del blocco. Terminazione.")
+        print("\nERRORE: Impossibile ottenere il template del blocco. Terminazione.")
         exit(1)
 
     # STEP 3) Assicurarsi di avere transazioni con dati completi
@@ -286,7 +298,7 @@ if __name__ == "__main__":
     # STEP 8) MINING
     mined_header_hex, nonce = mine_block(header_hex, template["target"])
     if not mined_header_hex:
-        print("\n? ERRORE: Nessun hash valido trovato! Mining fallito.")
+        print("\nERRORE: Nessun hash valido trovato! Mining fallito.")
         exit(1)
 
     # STEP 9) VERIFICA HEADER
@@ -299,5 +311,5 @@ if __name__ == "__main__":
         # STEP 11) INVIA IL BLOCCO
         submit_block(rpc, serialized_block)
     else:
-        print("\n? L'header non è valido, blocco scartato!")
+        print("\nL'header non è valido, blocco scartato!")
         exit(1)
