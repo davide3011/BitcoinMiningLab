@@ -187,10 +187,12 @@ Per eseguire invece ```miner_opt.py``` è necessario modificare correttamente il
 {
     "rpcuser": "tuo_utente",
     "rpcpassword": "tua_password",
-    "rpcport": port,
+    "rpcport": 8332,
     "rpcaddress": "indirizzo_nodo",
     "wallet_address": "indirizzo_bitcoin"
 }
+
+# modifica rpcport in base al tuo bicoin.conf
 ```
 
 ## 📜 Esecuzione degli script
