@@ -1,7 +1,7 @@
 {
     "rpcuser": "...",
     "rpcpassword": "...",
-    "rpcport": ...,
+    "rpcport": 8332,
     "rpcaddress": "",
     "wallet_address": "......"
 }
