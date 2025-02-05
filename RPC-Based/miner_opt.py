@@ -203,7 +203,7 @@ def mine_block(header_hex, target_hex):
 
         # Controlla se il nonce trovato è valido
         if int(block_hash, 16) < target:
-            print(f"\nBlocco trovato! ??")
+            print(f"\nBlocco trovato!")
             print(f"Nonce valido: {nonce}")
             print(f"Hash del blocco: {block_hash}")
             print(f"Tentativi totali: {attempts:,}")
@@ -256,7 +256,7 @@ def submit_block(rpc, serialized_block):
     try:
         result = rpc.submitblock(serialized_block)
         if result is None:
-            print("\nBlocco accettato nella blockchain! ??")
+            print("\nBlocco accettato nella blockchain!")
         else:
             print(f"\nErrore nell'invio del blocco: {result}")
     except Exception as e:
