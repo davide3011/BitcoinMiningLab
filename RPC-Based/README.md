@@ -1,8 +1,6 @@
 # Bitcoin Mining (RPC-Based)
 
-Questo repository contiene diversi script Python che implementano un miner di Bitcoin per testnet o regtest. L'obiettivo principale di questo progetto rimane didattico, con uno script dettagliato che permette di comprendere le basi del mining, e versioni ottimizzate per esplorare miglioramenti di efficienza.
-
-## 🎯 Scopo del progetto
+Questo repository contiene diversi script Python che implementano un semplice miner Bitcoin per testnet e regtest. L'obiettivo principale di questo progetto rimane didattico, con uno script dettagliato che permette di comprendere a fondo le basi del mining step per step e una versione ottimizzata per esplorare miglioramenti di efficienza.
 
 Questi script sono pensati per chi vuole comprendere il funzionamento del mining in modo chiaro e dettagliato.
 
@@ -18,15 +16,17 @@ Questi script sono pensati per chi vuole comprendere il funzionamento del mining
 
 - Le differenze tra mining in testnet e regtest per scopi di sviluppo e sperimentazione.
 
-Questo progetto è utile per chiunque voglia approfondire il protocollo Bitcoin e il ruolo del mining nella sicurezza della rete. Non è pensato per il mining competitivo, ma come base per la comprensione del processo.
+Questo progetto non è pensato per il mining competitivo, ma come base per la comprensione del processo.
 
 ## 📌 Struttura degli script
 
 Il repository contiene i seguenti file principali:
 
-**miner_debug.py:** Script didattico che permette di comprendere passo per passo ogni fase del processo di mining. Contiene numerosi punti di debug utili per studiare il flusso del programma e analizzare i dati intermedi.
+**```miner_debug.py```:** Script didattico che permette di comprendere passo per passo ogni fase del processo di mining. Contiene numerosi punti di debug utili per studiare il flusso del programma e analizzare i dati intermedi.
 
-**miner_opt.py:** Una versione ottimizzata del miner, senza i punti di debug, per testare un'implementazione più snella ed efficiente.
+**```miner_opt.py```:** Una versione ottimizzata del miner, senza i punti di debug, per testare un'implementazione più snella ed efficiente.
+
+**```conf.json```:** File per l'inserimento dei parametri RPC del proprio nodo e l'indirizzo di destinazione della coinbase transaction per ```miner_opt.py```.
 
 ## 🏗️ Funzioni principali
 
@@ -35,23 +35,23 @@ Ecco le fasi principali comuni:
 
 ### 1️⃣ Connessione al nodo Bitcoin
 
-La funzione test_rpc_connection() verifica che la connessione RPC funzioni correttamente e stampa informazioni sulla blockchain.
+La funzione ```test_rpc_connection()``` verifica che la connessione RPC funzioni correttamente e stampa informazioni sulla blockchain.
 
 ### 2️⃣ Ottenere il template del blocco
 
-La funzione get_block_template() richiede un template di blocco contenente transazioni e target di difficoltà.
+La funzione ```get_block_template()``` richiede un template di blocco contenente transazioni e target di difficoltà.
 
 ### 3️⃣ Creazione della transazione coinbase
 
-La funzione build_coinbase_transaction(template) crea la coinbase transaction che include la ricompensa per il miner.
+La funzione ```build_coinbase_transaction(template)``` crea la coinbase transaction che include la ricompensa per il miner.
 
 ### 4️⃣ Calcolo del Merkle Root
 
-La funzione calculate_merkle_root(coinbase_tx, transactions) calcola la radice di Merkle per le transazioni del blocco.
+La funzione ```calculate_merkle_root(coinbase_tx, transactions)``` calcola la radice di Merkle per le transazioni del blocco.
 
 ### 5️⃣ Costruzione dell'header del blocco
 
-La funzione build_block_header() crea l'intestazione del blocco concatenando versione, hash del blocco precedente, Merkle Root, timestamp, bits e nonce.
+La funzione ```build_block_header()``` crea l'intestazione del blocco concatenando versione, hash del blocco precedente, Merkle Root, timestamp, bits e nonce.
 
 ### 6️⃣ Mining del blocco (con scelta del metodo di elaborazione del nonce)
 
@@ -60,13 +60,13 @@ Nella versione ottimizzata è possibile scegliere tra due modalità per elaborar
 #### Progressiva 
 Esplora i nonce in maniera incrementale, partendo da zero e avanzando di 1 fino al valore massimo possibile.
 
-Per questa versione rimuovere la funzione ```def mine_block(header_hex, target_hex):``` e sostituisci la seguente funzione:
+Per questa versione rimuovere la funzione ```mine_block(header_hex, target_hex)``` e sostituisci la seguente funzione:
 
 ```bash
 def mine_block(header_hex, target_hex):
     """Esegue il mining cercando un nonce che soddisfi l'hash < target."""
-    print("\n=== STEP 7: Inizio del Mining ===")
-    print("\n?? Iniziando il mining...")
+    print("\n=== Inizio del Mining ===")
+    print("\nIniziando il mining...")
 
     nonce = 0
     target = int(target_hex, 16)
@@ -78,32 +78,32 @@ def mine_block(header_hex, target_hex):
         block_hash = double_sha256(full_header)[::-1].hex()
 
         if nonce % 100000 == 0:
-            print(f"?? Nonce: {nonce} | Hash: {block_hash}")
+            print(f"Nonce: {nonce} | Hash: {block_hash}")
 
         if int(block_hash, 16) < target:
-            print(f"\n? Blocco trovato! ??")
-            print(f"?? Nonce valido: {nonce}")
-            print(f"?? Hash del blocco: {block_hash}")
+            print(f"\nBlocco trovato!")
+            print(f"Nonce valido: {nonce}")
+            print(f"Hash del blocco: {block_hash}")
             return hexlify(full_header).decode(), nonce
 
         nonce += 1
 
-    print("\n? Non è stato trovato un hash valido.")
+    print("\nNon è stato trovato un hash valido.")
     return None, None
 ```
 
 #### Casuale
 Seleziona i nonce casualmente ad ogni iterazione, utile per simulare un approccio distribuito.
 
-Per questa versione rimuovere la funzione ```def mine_block(header_hex, target_hex):``` e sostituisci la seguente funzione:
+Per questa versione rimuovere la funzione ```mine_block(header_hex, target_hex)``` e sostituisci la seguente funzione:
 
 ```bash
 import random
 
 def mine_block(header_hex, target_hex):
     """Esegue il mining cercando un nonce casuale e stampa il progresso ogni 100.000 tentativi."""
-    print("\n=== STEP 7: Inizio del Mining ===")
-    print("\n?? Iniziando il mining con nonce randomico...")
+    print("\n=== Inizio del Mining ===")
+    print("\nIniziando il mining con nonce randomico...")
 
     target = int(target_hex, 16)
     base_header = unhexlify(header_hex[:152])  # Converti solo la parte fissa dell'header una volta
@@ -122,14 +122,14 @@ def mine_block(header_hex, target_hex):
 
         # Stampa i progressi ogni 100.000 tentativi
         if attempts % 100000 == 0:
-            print(f"?? Tentativi: {attempts:,} | Ultimo nonce testato: {nonce} | Hash: {block_hash}")
+            print(f"Tentativi: {attempts:,} | Ultimo nonce testato: {nonce} | Hash: {block_hash}")
 
         # Controlla se il nonce trovato è valido
         if int(block_hash, 16) < target:
-            print(f"\n? Blocco trovato! ??")
-            print(f"?? Nonce valido: {nonce}")
-            print(f"?? Hash del blocco: {block_hash}")
-            print(f"?? Tentativi totali: {attempts:,}")
+            print(f"\nBlocco trovato!")
+            print(f"Nonce valido: {nonce}")
+            print(f"Hash del blocco: {block_hash}")
+            print(f"Tentativi totali: {attempts:,}")
             return hexlify(full_header).decode(), nonce
 ```
 
@@ -153,7 +153,7 @@ Assicurati di avere un nodo Bitcoin in esecuzione con il supporto per le chiamat
 ```
 regtest=1  # Se vuoi eseguire in regtest, altrimenti commenta questa linea
 testnet4=1  # Se vuoi eseguire in testnet, altrimenti commenta questa linea
-mainnet=1  # Se vuoi eseguire in mainnet, altrimenti commenta questa riga
+mainnet=1  # Se vuoi eseguire in mainnet, altrimenti commenta questa linea
 
 server=1
 rpcuser=tuo_utente
@@ -171,20 +171,26 @@ Installa i moduli richiesti eseguendo:
 pip install -r requirements.txt
 ```
 ## 🔧 Configurazione
-
-Entrambi gli script contengono i parametri di connessione RPC:
+```miner_debug.py``` contiene i parametri di connessione RPC e l'lindirizzo per ricevere la ricompensa del blocco, dunque modificare la sezione:
 ```
 RPC_USER = "tuo_utente"
 RPC_PASSWORD = "tua_password"
 RPC_HOST = "indirizzo_nodo"
 RPC_PORT = "port"
-```
-Modifica queste variabili in base alla configurazione del tuo nodo.
 
-Inoltre, specifica l'indirizzo Bitcoin del miner per ricevere la ricompensa:
-
-```
 MINER_ADDRESS = "indirizzo_bitcoin"
+```
+
+Per eseguire invece ```miner_opt.py``` è necessario modificare correttamente il file ```conf.json```:
+
+```bash
+{
+    "rpcuser": "tuo_utente",
+    "rpcpassword": "tua_password",
+    "rpcport": port,
+    "rpcaddress": "indirizzo_nodo",
+    "wallet_address": "indirizzo_bitcoin"
+}
 ```
 
 ## 📜 Esecuzione degli script
@@ -195,7 +201,7 @@ Per avviare il miner con debug attivato:
 python miner_debug.py
 ```
 
-Per avviare la versione ottimizzata senza debug:
+Per avviare la versione ottimizzata senza debug, dopo aver modificato il file ```conf.json```:
 
 ```
 python miner_opt.py
