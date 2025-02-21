@@ -2,6 +2,8 @@
     "rpcuser": "...",
     "rpcpassword": "...",
     "rpcport": 8332,
-    "rpcaddress": "",
-    "wallet_address": "......"
+    "rpcaddress": "...",
+    "wallet_address": "...",
+    "difficulty_factor": 1.0,
+    "nonce_mode": "incremental"
 }
