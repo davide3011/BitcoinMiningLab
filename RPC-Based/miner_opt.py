@@ -176,52 +176,48 @@ def build_block_header(version, prev_hash, merkle_root, timestamp, bits, nonce):
         struct.pack("<I", nonce)
     )
     return hexlify(header).decode()
-
-def mine_block(header_hex, target_hex):
-    """Esegue il mining cercando un nonce casuale e stampa il progresso ogni 100.000 tentativi."""
-    print("\n=== Inizio del Mining ===")
-    print("\nIniziando il mining con nonce randomico...")
+    
+def mine_block(header_hex, target_hex, nonce_mode="incremental"):
+    print(f"\n=== Inizio del Mining | Modalità: {nonce_mode} ===")
 
     target = int(target_hex, 16)
-    base_header = unhexlify(header_hex[:152])  # Converti solo la parte fissa dell'header una volta
+    base_header = unhexlify(header_hex[:152])  # Parte fissa dell'header
     attempts = 0  # Contatore tentativi
 
-    while True:
-        # Genera un nonce casuale tra 0 e 2^32 - 1
+    # Imposta il nonce iniziale in base alla modalità scelta
+    if nonce_mode == "incremental":
+        nonce = 0
+    elif nonce_mode == "random":
         nonce = random.randint(0, 0xFFFFFFFF)
+    elif nonce_mode == "mixed":
+        nonce = random.randint(0, 0xFFFFFFFF)
+    else:
+        raise ValueError("Modalità di mining non valida. Scegli tra 'incremental', 'random' o 'mixed'.")
 
+    while True:
         # Aggiorna i 4 byte finali del nonce
         full_header = base_header + struct.pack("<I", nonce)
         block_hash = double_sha256(full_header)[::-1].hex()
 
-        # Aggiorna il contatore dei tentativi
-        attempts += 1
-
         # Stampa i progressi ogni 100.000 tentativi
+        attempts += 1
         if attempts % 100000 == 0:
-            print(f"Tentativi: {attempts:,} | Ultimo nonce testato: {nonce} | Hash: {block_hash}")
+            print(f"Tentativi: {attempts:,} | nonce: {nonce} | Hash: {block_hash}")
 
-        # Controlla se il nonce trovato è valido
+        # Verifica se il nonce trovato è valido
         if int(block_hash, 16) < target:
             print(f"\nBlocco trovato!")
             print(f"Nonce valido: {nonce}")
             print(f"Hash del blocco: {block_hash}")
             print(f"Tentativi totali: {attempts:,}")
             return hexlify(full_header).decode(), nonce
-    
-def submit_block_header(rpc, header_hex):
-    """Invia solo l'header del blocco al nodo Bitcoin per verificarne la validità."""
-    print("\n=== Verifica header ===")
 
-    try:
-        result = rpc.submitheader(header_hex)
-        if result is None:
-            print("\nHeader accettato dal nodo! Il blocco è collegato correttamente.")
-            return True
-        print(f"\nErrore nell'invio dell'header: {result}")
-    except Exception as e:
-        print(f"\nErrore RPC in submitheader: {e}")
-    return False
+        # Aggiorna il nonce in base alla modalità selezionata
+        if nonce_mode == "incremental" or nonce_mode == "mixed":
+            nonce = (nonce + 1) % 0x100000000  # Mantieni il nonce nei limiti di 32 bit
+        elif nonce_mode == "random":
+            nonce = random.randint(0, 0xFFFFFFFF)
+
 def serialize_block(header_hex, coinbase_tx, transactions):
     """Serializza l'intero blocco nel formato richiesto dal protocollo Bitcoin."""
     print("\n=== Serializzazione del blocco ===")
@@ -296,20 +292,15 @@ if __name__ == "__main__":
                                     merkle_root, template["curtime"], template["bits"], 0)
 
     # STEP 8) MINING
-    mined_header_hex, nonce = mine_block(header_hex, template["target"])
+    nonce_mode = config.get("nonce_mode", "incremental")  # Legge dal JSON, default "incremental"
+    target = decode_nbits(nBits_int)
+    mined_header_hex, nonce = mine_block(header_hex, target, nonce_mode)
     if not mined_header_hex:
         print("\nERRORE: Nessun hash valido trovato! Mining fallito.")
         exit(1)
 
-    # STEP 9) VERIFICA HEADER
-    header_ok = submit_block_header(rpc, mined_header_hex)
+    # STEP 9) SERIALIZZA IL BLOCCO
+    serialized_block = serialize_block(mined_header_hex, coinbase_tx, template["transactions"])
 
-    if header_ok:
-        # STEP 10) SERIALIZZA IL BLOCCO
-        serialized_block = serialize_block(mined_header_hex, coinbase_tx, template["transactions"])
-
-        # STEP 11) INVIA IL BLOCCO
-        submit_block(rpc, serialized_block)
-    else:
-        print("\nL'header non è valido, blocco scartato!")
-        exit(1)
+    # STEP 10) INVIA IL BLOCCO
+    submit_block(rpc, serialized_block)
