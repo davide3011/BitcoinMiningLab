@@ -1,8 +1,13 @@
 # Bitcoin Mining (RPC-Based)
 
-Questo repository contiene diversi script Python che implementano un semplice miner Bitcoin per testnet e regtest. L'obiettivo principale di questo progetto rimane didattico, con uno script dettagliato che permette di comprendere a fondo le basi del mining step per step e una versione ottimizzata per esplorare miglioramenti di efficienza.
+Questo progetto è un semplice miner Bitcoin scritto interamente in Python e suddiviso in moduli. È pensato per scopi didattici e di test in ambiente **regtest**.
 
-Questi script sono pensati per chi vuole comprendere il funzionamento del mining in modo chiaro e dettagliato.
+Il miner offre tre modalità differenti per l'elaborazione del nonce (incremental, random e mixed), per facilitare esperimenti e comprensione del processo di mining.
+
+È presente una variante del miner che permette di simulare una maggiore difficoltà attraverso un parametro regolabile. Questo è particolarmente utile per l'ambiente regtest, dove la difficoltà è bassissima,
+offrendo un compromesso tra la difficoltà estremamente bassa della rete regtest e la difficoltà elevata della rete testnet per i piccoli miner.
+
+**Attenzione**: Questo miner è concepito esclusivamente per scopi di test e non è adatto al mining competitivo in mainnet o testnet.
 
 ## Cosa puoi imparare:
 
@@ -14,74 +19,62 @@ Questi script sono pensati per chi vuole comprendere il funzionamento del mining
 
 - L'invio del blocco minato al nodo per la validazione.
 
-- Le differenze tra mining in testnet e regtest per scopi di sviluppo e sperimentazione.
+**Nota**: Questo progetto è concepito esclusivamente come base didattica per comprendere i meccanismi sottostanti al mining Bitcoin e non è destinato al mining competitivo in ambienti di produzione.
 
-Questo progetto non è pensato per il mining competitivo, ma come base per la comprensione del processo.
+## Struttura del Progetto
 
-## Struttura degli script
+Il progetto è organizzato in moduli per separare chiaramente le responsabilità:
 
-Il repository contiene i seguenti file principali:
+- **```config.py```**: Contiene tutte le impostazioni di configurazione: parametri RPC, indirizzo del wallet del miner, fattore di difficoltà e la modalità di calcolo del nonce (NONCE_MODE).
 
-**```miner_regtest.py```:** Script didattico che permette di comprendere passo per passo ogni fase del processo di mining. Supporta la modifica della difficoltà tramite il parametro difficulty_factor, permettendo di simulare condizioni di mining più impegnative.
+- **```rpc.py```**: Gestisce le connessioni RPC al nodo Bitcoin. Include funzioni per:
+    - Connettersi al nodo (connect_rpc())
+    - Testare la connessione (test_rpc_connection())
+    - Ottenere il template del blocco (get_block_template())
+    - Aggiornare le transazioni del template (aggiungendo i dati witness) tramite ensure_witness_data()
+    - Inviare il blocco minato (submit_block())
 
-**```miner_opt.py```:** Una versione ottimizzata del miner per testare un'implementazione più snella ed efficiente. Può essere utilizzata anche in Testnet, fornendo un ambiente di test più realistico rispetto a Regtest.
+- **```block_builder.py```**: Contiene tutte le funzioni per la costruzione e la serializzazione del blocco:
+    - Funzioni di hashing (es. double_sha256())
+    - Funzioni per la decodifica di nBits (decode_nbits()) e la codifica VarInt (encode_varint())
+    - Funzioni per codificare l’altezza del blocco nella coinbase (tx_encode_coinbase_height())
+    - Costruzione della coinbase transaction: ora la funzione build_coinbase_transaction(template, miner_script_pubkey) riceve lo scriptPubKey del miner come parametro
+    - Calcolo del Merkle Root (calculate_merkle_root())
+    - Costruzione dell'header del blocco (build_block_header())
+    - Serializzazione del blocco completo (serialize_block())
 
-**```conf.json```:** File per l'inserimento dei parametri RPC del proprio nodo e l'indirizzo di destinazione della coinbase transaction per ```miner_opt.py```.
+- **```miner.py```**: Implementa la logica di mining, con la funzione mine_block(header_hex, target_hex, nonce_mode) che esegue la ricerca del nonce valido. La modalità di calcolo del nonce viene determinata dal parametro nonce_mode, che può assumere i seguenti valori:
+    - incremental: il miner inizia da 0 e incrementa di 1 ogni iterazione. Questo metodo garantisce la copertura completa dello spazio dei nonce, ma può essere lento se il target è molto basso.
+    - random: ad ogni iterazione viene generato un nonce casuale. Questo approccio riduce la probabilità di collisioni se ci sono più miner, ma potrebbe ripetere valori già testati.
+    - mixed: il miner sceglie un nonce casuale iniziale e poi incrementa in modo sequenziale. Combina i vantaggi dei due metodi precedenti.
 
-## Funzioni principali
+- **```main.py```**: È lo script principale che coordina l'intero processo di mining. Il main esegue un ciclo continuo che:
+    1. Verifica la connessione RPC.
+    2. Richiede un template del blocco dal nodo Bitcoin.
+    3. Aggiorna le transazioni del template per includere i dati witness.
+    4. Ottiene lo scriptPubKey del miner e costruisce la coinbase transaction.
+    5. Modifica il target di difficoltà secondo il parametro DIFFICULTY_FACTOR.
+    6. Calcola il Merkle Root.
+    7. Costruisce l'header del blocco.
+    8. Esegue il mining per trovare il nonce valido, utilizzando la modalità impostata in NONCE_MODE.
+    9. Serializza il blocco completo.
+    10. Invia il blocco al nodo Bitcoin tramite una nuova connessione RPC.
 
-Entrambi gli script seguono lo stesso flusso base ma con alcune differenze.
-Ecco le fasi principali comuni:
+## Modalità di Calcolo del Nonce (nonce_mode)
 
-### 1️⃣ Connessione al nodo Bitcoin
+Il parametro ```NONCE_MODE``` nel file di configurazione controlla il metodo usato per iterare il nonce durante il mining. Le opzioni disponibili sono:
 
-La funzione ```test_rpc_connection()``` verifica che la connessione RPC funzioni correttamente e stampa informazioni sulla blockchain.
+- **incremental**: Il miner parte da 0 e incrementa il nonce di 1 ad ogni iterazione. Questo metodo garantisce una copertura completa dello spazio dei nonce.
 
-### 2️⃣ Ottenere il template del blocco
+- **random**: Ad ogni iterazione viene generato un nonce casuale. Questo approccio può evitare ripetizioni, ma potrebbe ripetere alcuni valori già testati.
 
-La funzione ```get_block_template()``` richiede un template di blocco contenente transazioni e target di difficoltà.
+- **mixed**: Il miner sceglie inizialmente un valore casuale e poi procede incrementando sistematicamente. Questa modalità combina i vantaggi degli approcci casuale e incrementale.
 
-### 3️⃣ Creazione della transazione coinbase
-
-La funzione ```build_coinbase_transaction(template)``` crea la coinbase transaction che include la ricompensa per il miner.
-
-### 4️⃣ Calcolo del Merkle Root
-
-La funzione ```calculate_merkle_root(coinbase_tx, transactions)``` calcola la radice di Merkle per le transazioni del blocco.
-
-### 5️⃣ Costruzione dell'header del blocco
-
-La funzione ```build_block_header()``` crea l'intestazione del blocco concatenando:
-- Versione del blocco
-- Hash del blocco precedente
-- Merkle Root
-- Timestamp
-- Bits (difficoltà)
-- Nonce
-
-### 6️⃣ Mining del blocco (con scelta del metodo di elaborazione del nonce)
-
-Lo script offre tre diverse modalità per generare il nonce, il valore che viene iterato per trovare un hash valido inferiore al target di difficoltà.
-Ogni metodo ha vantaggi e svantaggi in termini di efficienza computazionale e probabilità di successo.
-
-| Metodo                                    | Vantaggi                                                                 | Svantaggi                                                                 |
-|-------------------------------------------|-------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| **Incrementale (da 0 a 2³² - 1)**         | Esplora tutti i nonce in modo sistematico e sequenziale. Garantisce che nessun valore venga saltato. | Può essere prevedibile e meno efficace se il target è molto basso. Tutti i miner che usano questo metodo in parallelo potrebbero generare collisioni sui nonce. |
+| Metodo | Vantaggi | Svantaggi |
+|-|-|-|
+| **Incrementale (da 0 a 2³² - 1)** | Esplora tutti i nonce in modo sistematico e sequenziale. Garantisce che nessun valore venga saltato. | Può essere prevedibile e meno efficace se il target è molto basso. Tutti i miner che usano questo metodo in parallelo potrebbero generare collisioni sui nonce. |
 | **Casuale (ogni iterazione un nonce randomico)** | Buona distribuzione casuale, utile per ambienti distribuiti e per evitare collisioni tra più miner. | Possibilità di ripetere nonce già testati, riducendo l’efficienza a lungo termine. |
 | **Misto (primo nonce casuale, poi incremento)** | Combina il vantaggio della casualità iniziale con la sistematicità dell’incremento. Utile per diversificare l’output in ambienti paralleli. | Se la ricerca inizia in una zona sfavorevole dello spazio dei nonce, potrebbe richiedere più tempo per trovare un hash valido. |
-
-### 7️⃣ Serializzazione del blocco
-La funzione ```serialize_block()``` genera la versione completa e validata del blocco, pronta per essere inviata al nodo Bitcoin.
-Il blocco include:
-
-- Header serializzato
-- Numero totale di transazioni
-- Coinbase transaction
-- Transazioni della mempool
-
-### 8️⃣ Invio del blocco
-
-Dopo aver trovato un nonce valido, lo script invia il blocco al nodo Bitcoin con ```submit_block()```.
 
 ## Prerequisiti
 
@@ -91,10 +84,7 @@ Assicurati di avere un nodo Bitcoin in esecuzione con il supporto per le chiamat
 
 #### Esempio di bitcoin.conf
 ```
-regtest=1  # Se vuoi eseguire in regtest, altrimenti commenta questa linea
-testnet4=1  # Se vuoi eseguire in testnet, altrimenti commenta questa linea
-mainnet=1  # Se vuoi eseguire in mainnet, altrimenti commenta questa linea
-
+regtest=1
 server=1
 rpcuser=tuo_utente
 rpcpassword=tua_password
@@ -110,54 +100,29 @@ Installa i moduli richiesti eseguendo:
 ```bash
 pip install -r requirements.txt
 ```
-## Configurazione
 
-Lo script miner_regtest.py e miner_opt.py utilizzano lo stesso file di configurazione, conf.json, per impostare i parametri di connessione RPC, l'indirizzo per ricevere la ricompensa del blocco e, nel caso di Regtest, la difficoltà personalizzata.
+### 3. Configurazione
 
-Nota: Il parametro difficulty_factor viene utilizzato solo in Regtest per simulare ambienti più difficili. Se esegui il miner su Testnet con miner_opt.py, questo parametro verrà ignorato.
+Tutte le impostazioni sono gestite tramite config.py:
 
-Per eseguire miner_regtest.py o miner_opt.py, è necessario modificare il file ```conf.json```:
+| Parametro | Descrizione |
+|-|-|
+| **RPC_USER**         | Nome utente per l'autenticazione RPC, come configurato in bitcoin.conf. |
+| **RPC_PASSWORD** | Password RPC. |
+| **RPC_HOST** | Indirizzo IP del nodo Bitcoin. |
+| **RPC_PORT** | Porta per la connessione RPC. |
+| **WALLET_ADDRESS** | Indirizzo del wallet del miner per la coinbase transaction. |
+| **RPC_PASSWORD** | Password RPC. |
+| **NONCE_MODE** | Modalità per iterare il nonce: "incremental", "random" o "mixed". |
+
+### 4. Esecuzione
+Per avviare il miner in ambiente regtest, esegui:
 
 ```bash
-{
-    "rpcuser": "tuo_utente",
-    "rpcpassword": "tua_password",
-    "rpcport": 8332,
-    "rpcaddress": "indirizzo_nodo",
-    "wallet_address": "indirizzo_bitcoin",
-    "difficulty_factor": 2.0,
-    "nonce_mode": "mixed"
-}
+python main.py
 ```
 
-| Parametro          | Descrizione                                                                                      |
-|--------------------|------------------------------------------------------------------------------------------------|
-| **rpcuser**        | Nome utente RPC configurato nel file `bitcoin.conf`.                                            |
-| **rpcpassword**    | Password RPC configurata nel file `bitcoin.conf`.                                               |
-| **rpcport**        | Porta per la connessione RPC (modificarla in base alla configurazione del nodo).                |
-| **rpcaddress**     | Indirizzo del nodo Bitcoin RPC (es. `127.0.0.1` per connessioni locali).                        |
-| **wallet_address** | Indirizzo Bitcoin in cui verrà inviata la ricompensa della **coinbase transaction**.            |
-| **difficulty_factor** | Modifica la difficoltà del mining in **Regtest** moltiplicando il target originale (**⚠️ Ignorato in Testnet**). |
-| **nonce_mode**     | Metodo di elaborazione del nonce: `"incremental"`, `"random"` o `"mixed"` (vedi descrizione sopra). |
-
-
-## Esecuzione degli script
-
-Per avviare il miner con debug attivato:
-
-```
-python miner_regtest.py
-```
-
-Per avviare la versione ottimizzata senza debug, dopo aver modificato il file ```conf.json```:
-
-```
-python miner_opt.py
-```
-
-## Nota
-
-Questi script possono essere utilizzati sia per testnet che per regtest, a seconda della configurazione del nodo. Per implementare un miner più efficiente, considera l'uso del protocollo Stratum e hardware dedicato.
+Il programma esegue un ciclo continuo che, ad ogni iterazione, richiede un nuovo template, esegue il mining e invia il blocco minato al nodo Bitcoin. In questo modo, il miner continua automaticamente a lavorare su blocchi successivi.
 
 ## Licenza
 
