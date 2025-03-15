@@ -1,6 +1,7 @@
-import struct, random
+import struct, random, time
 from binascii import hexlify, unhexlify
 from block_builder import double_sha256
+import config
 
 def mine_block(header_hex, target_hex, nonce_mode="incremental"):
     """
@@ -9,11 +10,23 @@ def mine_block(header_hex, target_hex, nonce_mode="incremental"):
     - `incremental`: parte da 0 e incrementa di 1 fino al massimo valore possibile.
     - `random`: genera un nonce casuale a ogni iterazione.
     - `mixed`: genera un primo nonce casuale, poi incrementa di 1.
+    
+    Aggiorna il timestamp nell'header del blocco ogni TIMESTAMP_UPDATE_INTERVAL secondi.
     """
     print(f"\n=== Inizio del Mining | Modalità: {nonce_mode} ===")
 
     target = int(target_hex, 16)
-    base_header = unhexlify(header_hex[:152])  # Parte fissa dell'header
+    # Estrai le parti dell'header per poterle aggiornare separatamente
+    version = unhexlify(header_hex[:8])
+    prev_hash = unhexlify(header_hex[8:72])
+    merkle_root = unhexlify(header_hex[72:136])
+    timestamp_bytes = unhexlify(header_hex[136:144])
+    bits = unhexlify(header_hex[144:152])
+    
+    # Timestamp iniziale e ultimo aggiornamento
+    current_timestamp = struct.unpack("<I", timestamp_bytes)[0]
+    last_timestamp_update = time.time()
+    
     attempts = 0  # Contatore tentativi
 
     # Imposta il nonce iniziale in base alla modalità scelta
@@ -27,7 +40,15 @@ def mine_block(header_hex, target_hex, nonce_mode="incremental"):
         raise ValueError("Modalità di mining non valida. Scegli tra 'incremental', 'random' o 'mixed'.")
 
     while True:
-        # Aggiorna i 4 byte finali del nonce
+        # Controlla se è necessario aggiornare il timestamp
+        if config.TIMESTAMP_UPDATE_INTERVAL > 0 and time.time() - last_timestamp_update >= config.TIMESTAMP_UPDATE_INTERVAL:
+            current_timestamp = int(time.time())
+            timestamp_bytes = struct.pack("<I", current_timestamp)
+            last_timestamp_update = time.time()
+            print(f"\nTimestamp aggiornato: {current_timestamp}")
+        
+        # Costruisci l'header completo con il timestamp aggiornato
+        base_header = version + prev_hash + merkle_root + timestamp_bytes + bits
         full_header = base_header + struct.pack("<I", nonce)
         block_hash = double_sha256(full_header)[::-1].hex()
 

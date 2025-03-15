@@ -26,12 +26,21 @@ def main():
             # STEP 4) COSTRUISCI COINBASE
             miner_info = rpc_template.getaddressinfo(config.WALLET_ADDRESS)
             miner_script_pubkey = miner_info["scriptPubKey"]
-            coinbase_tx = build_coinbase_transaction(template, miner_script_pubkey)
+            coinbase_tx = build_coinbase_transaction(template, miner_script_pubkey, config.COINBASE_MESSAGE)
+            print(f"Messaggio nella coinbase: {config.COINBASE_MESSAGE}")
 
-            # STEP 5) TARGET
+            # STEP 5) MODIFICA TARGET
+            DIFFICULTY_FACTOR = float(config.DIFFICULTY_FACTOR)
+            if DIFFICULTY_FACTOR < 1:
+                print("Attenzione: DIFFICULTY_FACTOR deve essere >= 1. Impostazione a 1.0")
+                DIFFICULTY_FACTOR = 1.0
+
             nBits_int = int(template["bits"], 16)
-            target = decode_nbits(nBits_int)
-            print(f"Target: {target}")
+            original_target = decode_nbits(nBits_int)
+            modified_target_int = int(original_target, 16) // int(DIFFICULTY_FACTOR)
+            modified_target = f"{modified_target_int:064x}"
+            print(f"Target originale: {original_target}")
+            print(f"Target modificato ({DIFFICULTY_FACTOR}x più difficile): {modified_target}")
 
             # STEP 6) CALCOLA MERKLE ROOT
             merkle_root = calculate_merkle_root(coinbase_tx, template["transactions"])
@@ -42,7 +51,7 @@ def main():
 
             # STEP 8) MINING
             nonce_mode = config.NONCE_MODE
-            mined_header_hex, nonce = mine_block(header_hex, target, nonce_mode)
+            mined_header_hex, nonce = mine_block(header_hex, modified_target, nonce_mode)
             if not mined_header_hex:
                 print("ERRORE: Nessun hash valido trovato! Riprovo...")
                 continue

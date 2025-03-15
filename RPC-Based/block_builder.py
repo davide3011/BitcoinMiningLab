@@ -27,14 +27,31 @@ def tx_encode_coinbase_height(height):
     height_bytes = height.to_bytes((height.bit_length() + 7) // 8, 'little')
     return f"{len(height_bytes):02x}" + height_bytes.hex()
 
-def build_coinbase_transaction(template, miner_script_pubkey):
-    """Crea la transazione coinbase con un output di ricompensa e, se presente, un OP_RETURN per il witness commitment."""
+def build_coinbase_transaction(template, miner_script_pubkey, coinbase_message=None):
+    """Crea la transazione coinbase con un output di ricompensa e, se presente, un OP_RETURN per il witness commitment.
+    Permette anche di inserire un messaggio personalizzato nella coinbase."""
     height = template["height"]
     reward = template["coinbasevalue"]
     witness_commitment_hex = template.get("default_witness_commitment", "")
 
-    # Codifica l'altezza del blocco in formato BIP34 e aggiunge una extranonce casuale
-    script_sig_hex = tx_encode_coinbase_height(height) + os.urandom(4).hex()
+    # Codifica l'altezza del blocco in formato BIP34 (obbligatorio)
+    script_sig_hex = tx_encode_coinbase_height(height)
+    
+    # Aggiunge il messaggio personalizzato se presente
+    if coinbase_message:
+        # Aggiunge un byte di separazione (OP_RETURN = 0x6a) tra l'altezza e il messaggio
+        message_bytes = coinbase_message.encode('utf-8')
+        script_sig_hex += "6a"  # OP_RETURN come separatore
+        script_sig_hex += f"{len(message_bytes):02x}"  # Pushdata per la lunghezza
+        script_sig_hex += message_bytes.hex()
+    
+    # Aggiunge una extranonce casuale
+    script_sig_hex += os.urandom(4).hex()
+
+    # Verifica lunghezza totale scriptSig (BIP34 + messaggio + extranonce)
+    total_length = len(script_sig_hex) // 2  # Converti da esadecimale a byte
+    if total_length > 100:
+        raise ValueError(f"ScriptSig troppo lungo ({total_length} byte). Max consentito: 100 byte")
 
     # Costruzione della transazione coinbase
     tx_version = "01000000"
