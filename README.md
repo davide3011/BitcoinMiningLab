@@ -2,21 +2,39 @@
 
 ## Panoramica
 
-Il repository è strutturato in modo modulare per facilitare:
-- L'interazione con nodi Bitcoin tramite API RPC.
-- La costruzione e validazione di template per la creazione di blocchi.
-- La ricerca del nonce corretto e la serializzazione dei blocchi.
+Questo repository è dedicato allo sviluppo, allo studio e all'implementazione pratica dei principali protocolli di mining Bitcoin. La struttura è modulare per facilitare:
 
-**Nota:** Per una descrizione dettagliata del processo RPC (connessione al nodo, costruzione del template, ricerca del nonce, serializzazione e invio del blocco) consulta il README specifico all'interno della cartella [RPC-Based](RPC-Based/README.md).
+- Interazione con nodi Bitcoin tramite API RPC.
 
-## Struttura del Repository
+- Implementazione del protocollo Stratum V1 (server e client).
 
-- **RPC-Based**  
-  Contiene lo script che gestisce l'interazione RPC con il nodo Bitcoin. Tutti i dettagli tecnici e le istruzioni per l'uso si trovano nel README presente in questa cartella.
+- Costruzione di strumenti e script mirati per operazioni specifiche come la generazione della coinbase e del merkle branch.
 
-- **Stratum**  
-  Implementazione del protocollo Stratum per il mining Bitcoin. **Attualmente in sviluppo.**  
-  Qui verrà fornita una documentazione dettagliata e un README dedicato non appena il lavoro sarà completato.
+##Struttura del Repository
+
+- **RPC-Based**: Contiene il programma completo che interagisce con il nodo Bitcoin tramite RPC:
+
+   - Richiesta del block template (getblocktemplate).
+
+   - Costruzione e serializzazione del blocco.
+
+   - Ricerca del nonce e invio al nodo.
+
+Consulta il README all'interno della cartella per dettagli tecnici approfonditi e istruzioni d'uso.
+
+- **Stratum-V1** (in sviluppo): Implementazione completa del protocollo Stratum V1, che include:
+
+   - Server Stratum per fornire lavoro ai miner e ricevere submission valide.
+
+   - Client Stratum per simulare il comportamento di un miner.
+
+Documentazione e dettagli tecnici saranno resi disponibili man mano che il progetto progredisce.
+
+- **MiningUtils**: Contiene script specifici e modulari utili per diverse fasi del mining, tra cui:
+
+   - Costruzione corretta della transazione coinbase conforme al protocollo Stratum.
+
+   - Generazione del merkle branch per il job Stratum.
 
 ## Prerequisiti
 
@@ -32,11 +50,12 @@ Assicurati di avere installato:
    git clone https://github.com/davide3011/BitcoinMiningLab.git
    cd BitcoinMiningLab
    ```
-2. **Installa le dipendenze:**
+2. **Installa le dipendenze:**+
 ```bash
 pip install -r requirements.txt
 ```
 ## Licenza
+
 Distribuito sotto la licenza MIT.
 
 
