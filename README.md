@@ -10,7 +10,7 @@ Questo repository è dedicato allo sviluppo, allo studio e all'implementazione p
 
 - Costruzione di strumenti e script mirati per operazioni specifiche come la generazione della coinbase e del merkle branch.
 
-##Struttura del Repository
+## Struttura del Repository
 
 - **RPC-Based**: Contiene il programma completo che interagisce con il nodo Bitcoin tramite RPC:
 
