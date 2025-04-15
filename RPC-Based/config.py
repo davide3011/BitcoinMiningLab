@@ -9,8 +9,8 @@ il fattore di difficoltà e la modalità di calcolo del nonce.
 # ---------------------------
 RPC_USER = "..."                         # Username per l'autenticazione RPC
 RPC_PASSWORD = "..."                     # Password per l'autenticazione RPC
-RPC_HOST = "..."                         # Indirizzo IP del nodo
-RPC_PORT = 8332                          # Porta RPC del nodo
+RPC_HOST = "127.0.0.1"                   # Indirizzo IP del nodo
+RPC_PORT = 18443                         # Porta RPC del nodo
 
 # ---------------------------
 # Configurazione Wallet
@@ -20,7 +20,7 @@ WALLET_ADDRESS = "..."                   # Indirizzo del wallet del miner
 # ---------------------------
 # Parametri Mining
 # ---------------------------
-DIFFICULTY_FACTOR = 1000000000           # Fattore per modificare la difficoltà di mining
+DIFFICULTY_FACTOR = 100000000            # Fattore per modificare la difficoltà di mining
 NONCE_MODE = "mixed"                     # Modalità di aggiornamento del nonce:
                                          # "incremental"  -> incremento sequenziale
                                          # "random"       -> scelta casuale ad ogni iterazione
