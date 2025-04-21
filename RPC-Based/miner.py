@@ -2,8 +2,15 @@ import struct, random, time, hashlib
 from binascii import hexlify, unhexlify
 import config
 
-# Questo modulo contiene le funzioni necessarie per il processo di mining Bitcoin
-# Si occupa di trovare un nonce valido che produca un hash del blocco inferiore al target
+"""
+Modulo di mining per il processo di proof-of-work di Bitcoin.
+Implementa le funzioni necessarie per eseguire il mining di blocchi Bitcoin,
+includendo l'algoritmo di hashing SHA-256 e la ricerca del nonce valido.
+"""
+
+# ---------------------------------------------------------------------------
+# utility
+# ---------------------------------------------------------------------------
 
 def double_sha256(data: bytes) -> bytes:
     """
@@ -13,141 +20,172 @@ def double_sha256(data: bytes) -> bytes:
         data: I dati in formato bytes su cui calcolare l'hash
         
     Returns:
-        bytes: Il risultato del doppio hash SHA-256
-        
+        bytes: Il risultato del doppio hash SHA-256 (prima si applica SHA-256, poi si applica 
+               nuovamente SHA-256 sul risultato)
+    
     Note:
-        Questa funzione è il cuore dell'algoritmo di mining: l'hash del blocco
-        deve essere inferiore al target di difficoltà per essere considerato valido.
+        Questa funzione è utilizzata in molti contesti in Bitcoin, come il calcolo 
+        dell'hash del blocco, l'hash delle transazioni e il calcolo del merkle root.
     """
     return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
-def mine_block(header_hex, target_hex, nonce_mode="incremental"):
+def _midstate(prefix: bytes) -> "hashlib._Hash":
     """
-    Esegue il processo di mining su un blocco Bitcoin cercando un nonce valido.
+    Restituisce un contesto SHA-256 inizializzato con i primi 76 byte dell'header del blocco.
     
     Args:
-        header_hex: L'header del blocco in formato esadecimale (80 byte senza nonce finale)
+        prefix: I primi 76 byte dell'header del blocco (tutti i campi tranne il nonce)
+        
+    Returns:
+        hashlib._Hash: Un oggetto hash SHA-256 inizializzato con il prefisso
+        
+    Note:
+        Questa funzione di ottimizzazione permette di calcolare l'hash solo una volta per i byte
+        che non cambiano durante il mining, migliorando significativamente le prestazioni.
+    """
+    h = hashlib.sha256()
+    h.update(prefix)
+    return h
+
+# ---------------------------------------------------------------------------
+# mining
+# ---------------------------------------------------------------------------
+
+def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"):
+    """
+    Esegue il processo di mining (proof-of-work) cercando un nonce valido per l'header del blocco.
+    
+    Args:
+        header_hex: L'header del blocco in formato esadecimale (senza nonce)
         target_hex: Il target di difficoltà in formato esadecimale
         nonce_mode: La modalità di ricerca del nonce ("incremental", "random" o "mixed")
         
     Returns:
-        tuple: (header_completo, nonce_valido, hashrate) se il mining ha successo
-        
-    Raises:
-        ValueError: Se la modalità di mining specificata non è valida
-        
+        tuple: Una tupla contenente (header_hex_completo, nonce_valido, hashrate_medio)
+            - header_hex_completo: L'header completo del blocco con il nonce valido
+            - nonce_valido: Il nonce che ha prodotto un hash valido
+            - hashrate_medio: La velocità media di hash durante il mining (hash/secondo)
+    
     Note:
-        Il mining è il processo di ricerca di un nonce che, aggiunto all'header del blocco,
-        produce un hash inferiore al target di difficoltà. Questo processo richiede
-        molti tentativi (proof-of-work) e garantisce la sicurezza della blockchain.
+        Il processo di mining consiste nel trovare un nonce tale che l'hash dell'header
+        del blocco sia inferiore al target di difficoltà. Questo è il cuore del meccanismo
+        di proof-of-work di Bitcoin. La funzione supporta diverse strategie di ricerca del nonce:
+        - "incremental": Incrementa il nonce da 0 fino a trovare una soluzione
+        - "random": Genera nonce casuali
+        - "mixed": Combina approcci incrementali e casuali
     """
-    # Mostra l'inizio del processo di mining con la modalità selezionata
-    print(f"\n=== Inizio del Mining | Modalità: {nonce_mode} ===", end="\n\n")
 
-    # Converte il target da esadecimale a intero per confronti più veloci
-    target = int(target_hex, 16)
-    
-    # Estrae i componenti dell'header del blocco dal formato esadecimale
-    version = unhexlify(header_hex[:8])              # Versione (4 byte)
-    prev_hash = unhexlify(header_hex[8:72])          # Hash del blocco precedente (32 byte)
-    merkle_root = unhexlify(header_hex[72:136])      # Merkle root (32 byte)
-    timestamp_bytes = unhexlify(header_hex[136:144]) # Timestamp (4 byte)
-    bits = unhexlify(header_hex[144:152])            # Bits/Target (4 byte)
+    print(f"\n=== Inizio del Mining | Modalità: {nonce_mode} ===\n")
 
-    # Estrae il timestamp corrente dall'header (formato little-endian)
-    current_timestamp = struct.unpack("<I", timestamp_bytes)[0]
-    
-    # Inizializza i contatori di tempo
-    last_timestamp_update = time.time()  # Tempo dell'ultimo aggiornamento del timestamp
-    start_time = time.time()             # Tempo di inizio del mining
+    # ---- decodifica header (80 B) ----
+    # Converte le parti dell'header da esadecimale a bytes
+    version   = unhexlify(header_hex[0:8])      # Versione del blocco (4 byte)
+    prev_hash = unhexlify(header_hex[8:72])     # Hash del blocco precedente (32 byte)
+    merkle    = unhexlify(header_hex[72:136])   # Merkle root delle transazioni (32 byte)
+    ts_bytes  = unhexlify(header_hex[136:144])  # Timestamp (4 byte)
+    bits      = unhexlify(header_hex[144:152])  # Target di difficoltà in formato compatto (4 byte)
 
-    # Inizializza i contatori per le statistiche
-    attempts = 0                         # Numero totale di tentativi
-    last_hashrate_update = start_time    # Tempo dell'ultimo calcolo dell'hashrate
-    last_hashrate_attempts = 0           # Tentativi all'ultimo calcolo dell'hashrate
+    # Combina i primi 76 byte dell'header (tutti i campi tranne il nonce)
+    base76 = version + prev_hash + merkle + ts_bytes + bits
+    # Calcola lo stato intermedio dell'hash SHA-256 per ottimizzare il mining
+    mid    = _midstate(base76)
 
-    # Inizializza il nonce in base alla modalità selezionata
+    # Crea un header mutabile con spazio per il nonce (byte 76-79)
+    header = bytearray(base76 + b"\x00\x00\x00\x00")
+    # Crea una vista di memoria per accedere direttamente ai byte del nonce
+    nonce_view = memoryview(header)[76:]
+
+    # ---- target big‑endian (per confronto bytes) ----
+    # Converte il target da esadecimale a bytes in formato big-endian per confronto diretto
+    target_be = int(target_hex, 16).to_bytes(32, "big")
+
+    # ---- nonce iniziale ----
+    # Inizializza il nonce in base alla modalità di mining selezionata
     if nonce_mode == "incremental":
-        nonce = 0                                # Parte da 0 e incrementa sequenzialmente
-    elif nonce_mode == "random" or nonce_mode == "mixed":
-        nonce = random.randint(0, 0xFFFFFFFF)    # Sceglie un valore casuale tra 0 e 2^32-1
+        nonce = 0                                # Inizia da 0 e incrementa
+    elif nonce_mode in ("random", "mixed"):
+        nonce = random.randint(0, 0xFFFFFFFF)    # Inizia da un valore casuale
     else:
-        # Modalità non valida
         raise ValueError("Modalità di mining non valida. Scegli tra 'incremental', 'random' o 'mixed'.")
 
-    # Prepara la parte fissa dell'header (tutto tranne il nonce)
-    base_header = version + prev_hash + merkle_root + timestamp_bytes + bits
+    # Inizializza contatori e timer per statistiche e aggiornamenti
+    attempts, start_t = 0, time.time()           # Contatore tentativi e tempo iniziale
+    last_rate_t, last_rate_n = start_t, 0        # Timer per calcolo hashrate
+    last_tsu = start_t                           # Timer per aggiornamento timestamp
 
-    # Loop principale di mining - continua finché non trova un hash valido
+    # Costanti per ottimizzazione e logging
+    BATCH   = 8           # Numero di nonce da provare per iterazione
+    LOG_INT = 1_000_000   # Intervallo di tentativi tra un log e l'altro
+
+    # Crea un contesto SHA-256 vuoto da riutilizzare (ottimizzazione)
+    sha2ctx = hashlib.sha256()  # contesto vuoto da copiare (leggermente più veloce)
+
     while True:
-        # Aggiorna il timestamp se è trascorso l'intervallo configurato
-        # Questo è importante per mantenere il blocco "fresco" durante mining prolungati
-        if config.TIMESTAMP_UPDATE_INTERVAL > 0 and time.time() - last_timestamp_update >= config.TIMESTAMP_UPDATE_INTERVAL:
-            current_timestamp = int(time.time())  # Nuovo timestamp corrente
-            timestamp_bytes = struct.pack("<I", current_timestamp)  # Converte in bytes (little-endian)
-            last_timestamp_update = time.time()  # Aggiorna il tempo dell'ultimo aggiornamento
-            # Ricostruisce l'header base con il nuovo timestamp
-            base_header = version + prev_hash + merkle_root + timestamp_bytes + bits
-            # Se non è il primo aggiornamento, torna indietro di una riga prima di stampare
-            if last_timestamp_update > start_time +1:
-                print("\033[1A", end="")  # Torna indietro di una riga 
-            print(f"\033[K\rTimestamp aggiornato: {current_timestamp}", end="\r\n")
+        # ---- aggiornamento timestamp ----
+        # Aggiorna periodicamente il timestamp per mantenere il blocco "fresco"
+        if config.TIMESTAMP_UPDATE_INTERVAL and (time.time() - last_tsu) >= config.TIMESTAMP_UPDATE_INTERVAL:
+            # Crea un nuovo timestamp (tempo corrente)
+            ts_bytes = struct.pack("<I", int(time.time()))
+            # Aggiorna il timestamp nell'header (byte 68-71)
+            header[68:72] = ts_bytes
+            # Ricostruisce il prefisso dell'header con il nuovo timestamp
+            base76 = version + prev_hash + merkle + ts_bytes + bits
+            # Ricalcola lo stato intermedio dell'hash
+            mid = _midstate(base76)
+            # Aggiorna l'header completo
+            header[:76] = base76
+            # Aggiorna il timer dell'ultimo aggiornamento timestamp
+            last_tsu = time.time()
+            # Mostra messaggio di aggiornamento (con controllo cursore ANSI)
+            print(f"\033[1A\033[K\rTimestamp aggiornato: {int.from_bytes(ts_bytes, 'little')}")
 
-        # Crea l'header completo aggiungendo il nonce corrente
-        full_header = base_header + struct.pack("<I", nonce)  # Aggiunge il nonce (4 byte, little-endian)
-        # Calcola l'hash dell'header completo (questo è il cuore del mining)
-        block_hash = double_sha256(full_header)
+        # ---- batch di BATCH nonce ----
+        # Prova un batch di nonce in sequenza per ottimizzare le prestazioni
+        for i in range(BATCH):
+            # Calcola il nonce corrente (con overflow a 32 bit)
+            n = (nonce + i) & 0xFFFFFFFF
+            # Inserisce il nonce nell'header (byte 76-79)
+            struct.pack_into("<I", header, 76, n)
+            # Calcola il primo hash SHA-256 partendo dallo stato intermedio
+            h1 = mid.copy(); h1.update(nonce_view)
+            d1 = h1.digest()
+            # Calcola il secondo hash SHA-256 (double SHA-256)
+            h2 = sha2ctx.copy(); h2.update(d1)
+            digest = h2.digest()
 
-        # Incrementa il contatore dei tentativi
-        attempts += 1
-        
-        # Ogni 250.000 tentativi, aggiorna le statistiche e mostra lo stato
-        if attempts % 250000 == 0:
-            current_time = time.time()
-            elapsed = current_time - last_hashrate_update  # Tempo trascorso dall'ultimo aggiornamento
-            
-            # Calcola l'hashrate corrente (hash al secondo)
-            # Formula: (tentativi_attuali - tentativi_precedenti) / tempo_trascorso
-            current_hashrate = (attempts - last_hashrate_attempts) / elapsed
-            # Aggiorna i riferimenti per il calcolo dell'hashrate
-            last_hashrate_update = current_time
-            last_hashrate_attempts = attempts
+            # Confronta l'hash ottenuto con il target (invertendo l'hash in little-endian)
+            if digest[::-1] < target_be:
+                # Calcola statistiche finali
+                total = time.time() - start_t
+                hashrate = (attempts + i + 1) / total if total else 0
+                # Mostra informazioni sul blocco trovato
+                print("\033[K\rBlocco trovato!")
+                print(f"\033[K\rNonce: {n}")
+                print(f"\033[K\rHash: {digest[::-1].hex()}")
+                print(f"\033[K\rTentativi: {attempts + i + 1:,}")
+                print(f"\033[K\rTempo: {total:.2f}s | Hashrate medio: {hashrate/1000:.2f} kH/s")
+                # Ritorna l'header completo, il nonce valido e l'hashrate medio
+                return hexlify(bytes(header)).decode(), n, hashrate
 
-            # Visualizza lo stato del mining con sequenze ANSI per aggiornare la console
-            # \033[K cancella la riga corrente, \r riporta il cursore all'inizio della riga
-            print("\033[K\r----- Stato Mining -----", end="\r\n")
-            print(f"\033[K\rTentativi: {attempts:,}", end="\r\n")  # Formatta con separatori di migliaia
-            print(f"\033[K\rNonce: {nonce}", end="\r\n")
-            # Nota: l'hash viene invertito ([::-1]) perché Bitcoin visualizza gli hash in big-endian
-            print(f"\033[K\rHash: {block_hash[::-1].hex()}", end="\r\n")
-            print(f"\033[K\rHashrate: {current_hashrate/1000:,.2f} kH/s", end="\r\n")  # Hashrate [kH/s]
-            print("\033[K\r------------------------", end="\r\n")
-            print("\033[6F", end="")  # Sposta il cursore 6 righe in su per sovrascrivere le stesse righe
+        # Aggiorna il contatore dei tentativi e il nonce base per il prossimo batch
+        attempts += BATCH
+        nonce = (nonce + BATCH) & 0xFFFFFFFF  # Incrementa con overflow a 32 bit
 
-        # Verifica se l'hash trovato è valido (inferiore al target)
-        # Gli hash in Bitcoin sono interpretati come numeri little-endian
-        if int.from_bytes(block_hash, 'little') < target:
-            # Calcola il tempo totale di mining e l'hashrate medio
-            mining_time = time.time() - start_time
-            hashrate = attempts / mining_time if mining_time > 0 else 0
-
-            # Pulisce le righe di stato precedenti
-            print("\033[K\r\n" * 6, end="")
-            # Mostra i risultati del mining riuscito
-            print(f"\033[K\rBlocco trovato!", end="\r\n")
-            print(f"\033[K\rNonce valido: {nonce}", end="\r\n")
-            print(f"\033[K\rHash del blocco: {block_hash[::-1].hex()}", end="\r\n")
-            print(f"\033[K\rTentativi totali: {attempts:,}", end="\r\n")
-            print(f"\033[K\rTempo impiegato: {mining_time:.2f} secondi", end="\r\n")
-            print(f"\033[K\rHashrate: {hashrate/1000:.2f} kH/s")
-
-            # Restituisce l'header completo, il nonce trovato e l'hashrate medio
-            return hexlify(full_header).decode(), nonce, hashrate
-
-        # Se l'hash non è valido, prova con un nuovo nonce in base alla modalità selezionata
-        if nonce_mode == "incremental" or nonce_mode == "mixed":
-            # Incrementa il nonce e gestisce l'overflow (torna a 0 dopo 2^32-1)
-            nonce = (nonce + 1) % 0x100000000  # 0x100000000 = 2^32
-        elif nonce_mode == "random":
-            # Sceglie un nuovo nonce casuale
-            nonce = random.randint(0, 0xFFFFFFFF)
+        # ---- log periodico ----
+        # Mostra periodicamente lo stato del mining e le statistiche
+        if attempts % LOG_INT == 0:
+            # Calcola l'hashrate corrente
+            now = time.time()
+            rate = (attempts - last_rate_n) / (now - last_rate_t)
+            last_rate_t, last_rate_n = now, attempts
+            # Calcola l'hash corrente per debug
+            struct.pack_into("<I", header, 76, nonce)
+            tmp = mid.copy(); tmp.update(nonce_view)
+            dbg_hash = double_sha256(tmp.digest())
+            # Mostra lo stato del mining (con controllo cursore ANSI)
+            print("\033[K\r----- Stato Mining -----")
+            print(f"\033[K\rTentativi: {attempts:,}")
+            print(f"\033[K\rNonce: {nonce}")
+            print(f"\033[K\rHash: {dbg_hash[::-1].hex()}")
+            print(f"\033[K\rHashrate: {rate/1000:,.2f} kH/s")
+            print("\033[5F", end="")  # Sposta il cursore 5 righe in alto per sovrascrivere

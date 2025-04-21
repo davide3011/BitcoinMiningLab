@@ -65,8 +65,6 @@ def main():
                 print("\033[K\rERRORE: Nessun hash valido trovato! Riprovo...", end="\r\n")
                 continue
                 
-            print(f"\033[K\r=== Statistiche Mining ===", end="\r\n")
-
             # STEP 9) SERIALIZZA IL BLOCCO
             serialized_block = serialize_block(mined_header_hex, coinbase_tx, template["transactions"])
             if not serialized_block:

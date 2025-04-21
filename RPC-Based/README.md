@@ -15,7 +15,7 @@ Il miner è strutturato in moduli separati, ognuno con una responsabilità speci
 - `config.py`: Contiene le configurazioni del miner
 - `rpc.py`: Gestisce la comunicazione con il nodo Bitcoin
 - `block_builder.py`: Costruisce e serializza il blocco
-- `miner.py`: Implementa l'algoritmo di mining (proof-of-work)
+- `miner.py`: Implementa l'algoritmo di mining (proof-of-work), gestisce la ricerca del nonce valido e ottimizza il processo con tecniche avanzate di hashing
 
 ## Il Processo di Mining Passo per Passo
 
@@ -173,6 +173,25 @@ def mine_block(header_hex, target_hex, nonce_mode="incremental"):
 ```
 
 Durante il mining, il timestamp viene periodicamente aggiornato per mantenere il blocco "fresco". Inoltre, vengono calcolate e visualizzate statistiche come l'hashrate (hash al secondo).
+
+### Ottimizzazioni nel Modulo Miner
+
+Il modulo `miner.py` implementa diverse ottimizzazioni per massimizzare l'efficienza del mining:
+
+1. **Midstate Caching**: Calcola e memorizza lo stato intermedio dell'hash SHA-256 per i primi 76 byte dell'header (tutti tranne il nonce), evitando di ricalcolare l'hash completo ad ogni tentativo.
+
+2. **Batch Processing**: Elabora più nonce in sequenza per ogni iterazione, riducendo l'overhead del ciclo principale.
+
+3. **Memory Views**: Utilizza `memoryview` per accedere direttamente ai byte del nonce nell'header, evitando copie inutili in memoria.
+
+4. **Riutilizzo Contesti**: Riutilizza i contesti SHA-256 per ridurre l'allocazione di memoria.
+
+5. **Modalità di Mining Multiple**:
+   - **Incrementale**: Inizia da 0 e incrementa il nonce sequenzialmente
+   - **Random**: Genera nonce casuali per esplorare diverse parti dello spazio di ricerca
+   - **Mixed**: Combina approcci incrementali e casuali
+
+6. **Aggiornamento Timestamp**: Aggiorna periodicamente il timestamp per mantenere il blocco valido durante sessioni di mining prolungate.
 
 ### 8. Serializzazione del Blocco
 
