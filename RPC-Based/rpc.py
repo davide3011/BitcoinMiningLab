@@ -46,6 +46,30 @@ def test_rpc_connection():
         print(f"\nErrore di connessione: {e}")
         raise
 
+def get_best_block_hash(rpc):
+    """
+    Recupera l'hash del blocco più recente nella blockchain (best block).
+    
+    Args:
+        rpc: Connessione RPC al nodo Bitcoin
+        
+    Returns:
+        str: L'hash del blocco più recente, oppure None in caso di errore
+        
+    Note:
+        La chiamata RPC 'getbestblockhash' restituisce l'identificatore univoco (hash)
+        dell'ultimo blocco valido aggiunto alla catena principale della blockchain.
+        Questo è utile per conoscere lo stato attuale della blockchain.
+    """
+    try:
+        # Richiede l'hash del blocco più recente
+        best_block_hash = rpc.getbestblockhash()
+        return best_block_hash
+    except Exception as e:
+        # Gestisce eventuali errori durante la chiamata RPC
+        print(f"\nErrore nel recupero del best block hash: {e}")
+        return None
+
 def get_block_template(rpc):
     """
     Richiede un template di blocco al nodo Bitcoin con supporto per le regole SegWit.

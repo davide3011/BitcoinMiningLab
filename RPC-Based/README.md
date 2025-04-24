@@ -17,7 +17,7 @@ Il miner è strutturato in moduli separati, ognuno con una responsabilità speci
 - `block_builder.py`: Costruisce e serializza il blocco
 - `miner.py`: Implementa l'algoritmo di mining (proof-of-work), gestisce la ricerca del nonce valido e ottimizza il processo con tecniche avanzate di hashing
 
-## Il Processo di Mining Passo per Passo
+## Il Processo di Mining passo per passo
 
 ### 1. Connessione RPC al Nodo Bitcoin
 
@@ -135,7 +135,7 @@ def decode_nbits(nBits: int) -> str:
 Il miner permette di modificare la difficoltà mediante il parametro `DIFFICULTY_FACTOR` nel file `config.py`. Questo è utile per scopi didattici in ambiente regtest, 
 dove è possibile rendere il mining più facile o più difficile.
 
-### 7. Processo di Mining (Proof-of-Work)
+### 7. Processo di Mining (Proof-of-Work) e Controllo Nuovo Blocco
 
 Il mining è il processo di ricerca di un nonce che, aggiunto all'header del blocco, produce un hash inferiore al target di difficoltà. 
 Questo processo richiede molti tentativi e garantisce la sicurezza della blockchain.
@@ -147,7 +147,7 @@ Il nostro miner offre tre modalità differenti per l'elaborazione del nonce:
 - **Mixed**: Inizia con un nonce casuale e poi procede incrementalmente
 
 ```python
-def mine_block(header_hex, target_hex, nonce_mode="incremental"):
+def mine_block(header_hex, target_hex, nonce_mode="incremental", stop_event: threading.Event | None = None):
     target = int(target_hex, 16)
     
     # Inizializza il nonce in base alla modalità selezionata
@@ -158,6 +158,10 @@ def mine_block(header_hex, target_hex, nonce_mode="incremental"):
     
     # Loop principale di mining
     while True:
+        # Controllo evento di stop
+        if stop_event is not None and stop_event.is_set():
+            return None, None, None # Interrompi se richiesto
+
         full_header = base_header + struct.pack("<I", nonce)
         block_hash = double_sha256(full_header)
         
@@ -273,9 +277,6 @@ rpcpassword=tuapassword
 # Porta RPC (default per regtest: 18443)
 rpcport=18443
 
-# Abilita il mining con CPU
-gen=0
-
 # Abilita l'indicizzazione delle transazioni
 txindex=1
 ```
@@ -336,7 +337,11 @@ Esegui il miner con il comando:
 python main.py
 ```
 
-Il programma si connetterà al nodo Bitcoin, costruirà un blocco e inizierà il processo di mining. Una volta trovato un blocco valido, lo invierà al nodo e visualizzerà un messaggio di conferma.
+Il programma si connetterà al nodo Bitcoin, costruirà un blocco e inizierà il processo di mining.
+
+Durante il mining, un thread separato (watchdog) monitora costantemente la blockchain per nuovi blocchi. Se viene rilevato un nuovo blocco sulla rete, il processo di mining corrente viene interrotto e il programma ricomincia il ciclo ottenendo un nuovo template aggiornato. Questo assicura che il miner lavori sempre sull'ultimo stato della catena.
+
+Una volta trovato un blocco valido prima che ne venga trovato un altro sulla rete, il miner lo invierà al nodo e visualizzerà un messaggio di conferma.
 
 ### 7. Verifica del Blocco Minato
 
@@ -376,5 +381,3 @@ Nota: i blocchi minati devono maturare (100 conferme) prima che la ricompensa po
 ## Licenza
 
 Distribuito sotto la licenza MIT.
-
-
