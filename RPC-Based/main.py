@@ -1,10 +1,10 @@
 import time, threading, config
 from rpc import (
     connect_rpc, test_rpc_connection, get_block_template, ensure_witness_data,
-    submit_block, get_best_block_hash
+    submit_block, get_best_block_hash 
 )
 from block_builder import (
-    decode_nbits, calculate_merkle_root, build_block_header,
+    decode_nbits, calculate_merkle_root, build_block_header, is_segwit_tx,
     serialize_block, build_coinbase_transaction
 )
 from miner import mine_block
@@ -50,10 +50,16 @@ def main():
             # STEP 3) Assicurarsi di avere transazioni con dati completi
             ensure_witness_data(rpc_template, template)
 
+            tot_tx       = len(template["transactions"])
+            witness_tx   = sum(1 for tx in template["transactions"] if is_segwit_tx(tx["data"]))
+            legacy_tx    = tot_tx - witness_tx
+
+            print(f"Transazioni nel template: totali = {tot_tx}  |  legacy = {legacy_tx}  |  segwit = {witness_tx}")
+
             # STEP 4) COSTRUISCI COINBASE
             miner_info = rpc_template.getaddressinfo(config.WALLET_ADDRESS)
             miner_script_pubkey = miner_info["scriptPubKey"]
-            coinbase_tx = build_coinbase_transaction(
+            coinbase_tx, coinbase_txid = build_coinbase_transaction(
                 template, miner_script_pubkey, config.COINBASE_MESSAGE
             )
             print(f"\033[K\rMessaggio nella coinbase: {config.COINBASE_MESSAGE}", end="\r\n")
@@ -79,7 +85,7 @@ def main():
             print(f"\033[K\rTarget modificato ({DIFFICULTY_FACTOR}x più difficile): {modified_target}", end="\r\n")
 
             # STEP 6) CALCOLA MERKLE ROOT
-            merkle_root = calculate_merkle_root(coinbase_tx, template["transactions"])
+            merkle_root = calculate_merkle_root(coinbase_txid, template["transactions"])
 
             # STEP 7) COSTRUISCI HEADER
             header_hex = build_block_header(

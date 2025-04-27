@@ -5,6 +5,9 @@ from binascii import unhexlify, hexlify
 # Ogni funzione gestisce un aspetto specifico della creazione del blocco, dalla transazione coinbase
 # fino alla serializzazione finale del blocco completo
 
+EXTRANONCE1 = "1234567890abcdef"
+EXTRANONCE2 = "abcdabcd"
+
 def double_sha256(data):
     """ 
     Esegue il doppio SHA-256 su un dato, una funzione di hash fondamentale in Bitcoin.
@@ -111,136 +114,99 @@ def tx_encode_coinbase_height(height):
     # Restituisce: [lunghezza in byte dell'altezza in hex] + [altezza in hex]
     return f"{len(height_bytes):02x}" + height_bytes.hex()
 
+def is_segwit_tx(raw_hex: str) -> bool:
+    """
+    Ritorna True se la transazione è serializzata in formato SegWit.
+    Nei raw tx SegWit, dopo i 4 byte di version compaiono i byte
+    marker (0x00) e flag (0x01) => "0001" in esadecimale.
+    """
+    return len(raw_hex) >= 12 and raw_hex[8:12] == "0001"
+
 def build_coinbase_transaction(template, miner_script_pubkey, coinbase_message=None):
-    """
-    Crea la transazione coinbase con un output di ricompensa e, se presente, un OP_RETURN per il witness commitment.
-    
-    Args:
-        template: Dizionario contenente i dati del template del blocco (altezza, valore della ricompensa, ecc.)
-        miner_script_pubkey: Script in formato hex che definisce a chi va la ricompensa (indirizzo del miner)
-        coinbase_message: Messaggio opzionale da includere nella transazione coinbase
-        
-    Returns:
-        str: La transazione coinbase serializzata in formato esadecimale
-        
-    Raises:
-        ValueError: Se lo scriptSig supera i 100 byte di lunghezza
-    
-    Note:
-        La transazione coinbase è la prima transazione in ogni blocco e ha caratteristiche speciali:
-        1. Non ha input reali (usa un input fittizio con hash tutto zero)
-        2. Crea nuovi bitcoin come ricompensa per il miner
-        3. Può contenere dati arbitrari nello scriptSig
-        4. Dal BIP34, deve includere l'altezza del blocco come primo elemento dello scriptSig
-        5. Può includere un witness commitment per supportare Segwit (BIP141)
-    """
-    # Estrae i dati necessari dal template
-    height = template["height"]  # Altezza del blocco corrente
-    reward = template["coinbasevalue"]  # Valore della ricompensa in satoshi
-    witness_commitment_hex = template.get("default_witness_commitment", "")  # Commitment per Segwit (opzionale)
+    height  = template["height"]
+    reward  = template["coinbasevalue"]
+    wc_raw  = template.get("default_witness_commitment")          # può essere script o sola radice
+    segwit  = bool(wc_raw)
 
-    # PARTE 1: Costruzione dello scriptSig (script di firma dell'input)
-    # Codifica l'altezza del blocco in formato BIP34 (obbligatorio dal 2012)
-    script_sig_hex = tx_encode_coinbase_height(height)
-    
-    # Aggiunge il messaggio personalizzato se presente
+    tx_version = struct.pack("<I", template["version"]).hex()
+    parts = [tx_version]
+    if segwit:
+        parts.append("0001")                                      # marker+flag
+
+    # ---- input coinbase ------------------------------------------------
+    parts += ["01", "00"*32, "ffffffff"]
+
+    script_sig = tx_encode_coinbase_height(height)
     if coinbase_message:
-        # Aggiunge un byte di separazione (OP_RETURN = 0x6a) tra l'altezza e il messaggio
-        message_bytes = coinbase_message.encode('utf-8')  # Converte il messaggio in bytes
-        script_sig_hex += "6a"  # OP_RETURN come separatore
-        script_sig_hex += f"{len(message_bytes):02x}"  # Pushdata per la lunghezza del messaggio
-        script_sig_hex += message_bytes.hex()  # Aggiunge il messaggio in formato hex
-    
-    # Aggiunge una extranonce casuale (utile per aumentare l'entropia durante il mining)
-    script_sig_hex += os.urandom(4).hex()
+        m = coinbase_message.encode()
+        script_sig += "6a" + f"{len(m):02x}" + m.hex()
+    # Aggiunge extranonce1 e extranonce2 come richiesto dal protocollo Stratum V1
+    script_sig += EXTRANONCE1 + EXTRANONCE2
 
-    # Verifica che lo scriptSig non superi i 100 byte (limite pratico)
-    total_length = len(script_sig_hex) // 2  # Converti da esadecimale a byte
-    if total_length > 100:
-        raise ValueError(f"ScriptSig troppo lungo ({total_length} byte). Max consentito: 100 byte")
+    if len(script_sig)//2 > 100:
+        raise ValueError("scriptSig > 100 byte")
 
-    # PARTE 2: Costruzione dell'header della transazione
-    tx_version = "01000000"  # Versione 1 della transazione in little-endian
-    # La coinbase ha un input speciale con hash tutto zero e indice 0xFFFFFFFF
-    prev_hash = "00" * 32  # Hash dell'output precedente (tutto zero per coinbase)
-    prev_index = "ffffffff"  # Indice dell'output precedente (0xFFFFFFFF per coinbase)
-    sequence = "ffffffff"  # Sequence number (valore standard)
-    locktime = "00000000"  # Locktime (0 = nessun lock)
-    
-    # Calcola la lunghezza dello scriptSig in formato VarInt
-    script_len = encode_varint(len(script_sig_hex) // 2)
+    parts.append(encode_varint(len(script_sig)//2) + script_sig)
+    parts.append("ffffffff")                                      # sequence
 
-    # PARTE 3: Costruzione degli output
-    # Output 1: Ricompensa per il miner
-    satoshis_reward = struct.pack("<Q", reward).hex()  # Valore in satoshi (formato little-endian)
-    miner_script_len = encode_varint(len(miner_script_pubkey) // 2)  # Lunghezza dello script in VarInt
-    outputs_hex = satoshis_reward + miner_script_len + miner_script_pubkey  # Output completo
-    output_count = 1  # Inizialmente abbiamo solo l'output della ricompensa
+    # ---- outputs -------------------------------------------------------
+    outputs = []
 
-    # Output 2 (opzionale): Witness Commitment per Segwit
-    if witness_commitment_hex and len(witness_commitment_hex) == 64:
-        # Crea uno script OP_RETURN con il witness commitment
-        # 6a = OP_RETURN, 24 = lunghezza (36 byte), aa21a9ed = marker per witness commitment
-        witness_commitment_script = "6a24aa21a9ed" + witness_commitment_hex
-        # Aggiunge un output con valore 0 e lo script del witness commitment
-        outputs_hex += "00" * 8  # 0 satoshi
-        outputs_hex += encode_varint(len(witness_commitment_script) // 2)  # Lunghezza script
-        outputs_hex += witness_commitment_script  # Script completo
-        output_count += 1  # Incrementa il contatore degli output
+    miner_out  = struct.pack("<Q", reward).hex()
+    miner_out += encode_varint(len(miner_script_pubkey)//2) + miner_script_pubkey
+    outputs.append(miner_out)
 
-    # PARTE 4: Serializzazione della transazione coinbase completa
-    return (
-        # Formato: version + input_count + inputs + output_count + outputs + locktime
-        f"{tx_version}01{prev_hash}{prev_index}{script_len}{script_sig_hex}{sequence}"
-        f"{encode_varint(output_count)}{outputs_hex}{locktime}"
-    )
+    if segwit:
+        # wc_script già pronto se inizia con '6a'
+        if wc_raw.startswith("6a"):
+            wc_script = wc_raw
+        else:                                                     # solo radice: costruisci script
+            wc_script = "6a24aa21a9ed" + wc_raw
+        outputs.append("00"*8 + encode_varint(len(wc_script)//2) + wc_script)
 
-def calculate_merkle_root(coinbase_tx, transactions):
-    """
-    Calcola il Merkle Root del blocco a partire dalla transazione coinbase e dalle altre transazioni.
-    
-    Args:
-        coinbase_tx: La transazione coinbase serializzata in formato esadecimale
-        transactions: Lista di transazioni (ogni transazione è un dizionario con 'hash' o 'data')
-        
-    Returns:
-        str: Il Merkle Root in formato esadecimale
-    
-    Note:
-        Il Merkle Root è un hash che riassume tutte le transazioni del blocco in un unico valore.
-        Viene calcolato costruendo un albero binario (Merkle Tree) dove:
-        1. Le foglie sono gli hash delle transazioni
-        2. I nodi interni sono gli hash della concatenazione dei loro figli
-        3. La radice dell'albero è il Merkle Root
-        
-        Se il numero di nodi a un livello è dispari, l'ultimo nodo viene duplicato.
-        Questo garantisce che ogni blocco abbia un Merkle Root unico e permette di verificare
-        l'appartenenza di una transazione al blocco senza scaricare tutte le transazioni (SPV).
-    """
-    # Calcola l'hash della transazione coinbase
-    # Nota: gli hash in Bitcoin sono memorizzati in little-endian, quindi invertiamo l'ordine dei byte
-    coinbase_hash = double_sha256(unhexlify(coinbase_tx))[::-1].hex()
-    
-    # Crea la lista di tutti gli hash delle transazioni, iniziando con la coinbase
-    tx_hashes = [coinbase_hash] + [
-        # Se la transazione ha già un hash, lo usa; altrimenti lo calcola dai dati
-        tx["hash"] if "hash" in tx else double_sha256(unhexlify(tx["data"]))[::-1].hex()
-        for tx in transactions
+    parts.append(encode_varint(len(outputs)) + "".join(outputs))
+
+    # ---- witness riservato --------------------------------------------
+    if segwit:
+        parts += ["01", "20", "00"*32]                            # 1 elemento × 32 byte
+
+    parts.append("00000000")                                      # locktime
+    coinbase_hex = "".join(parts)
+
+    # ---------- txid legacy (senza marker/flag + witness) ---------------
+    if segwit:
+        # 1) elimina marker+flag "0001"
+        core = tx_version + coinbase_hex[12:]
+
+        # 2) separa locktime (8 hex alla fine)
+        locktime = core[-8:]                # "00000000"
+        body     = core[:-8]                # tutto tranne il locktime
+
+        # 3) rimuove la witness-stack (68 hex) presente prima del locktime
+        body_wo_wit = body[:-68]            # taglia solo i 34 byte di witness
+
+        # 4) ricompone corpo + locktime
+        core = body_wo_wit + locktime
+    else:
+        core = coinbase_hex
+
+    txid = double_sha256(unhexlify(core))[::-1].hex()
+    return coinbase_hex, txid
+
+def calculate_merkle_root(coinbase_txid: str, transactions: list[dict]) -> str:
+    # foglie in formato bytes-LE
+    tx_hashes = [unhexlify(coinbase_txid)[::-1]] + [
+        unhexlify(tx["hash"])[::-1] for tx in transactions
     ]
 
-    # Converti tutti gli hash in formato bytes e inverti in little-endian per il calcolo
-    tx_hashes = [unhexlify(tx)[::-1] for tx in tx_hashes]
-
-    # Calcolo del Merkle Root con algoritmo iterativo
     while len(tx_hashes) > 1:
-        # Se il numero di hash è dispari, duplica l'ultimo hash
-        if len(tx_hashes) % 2 == 1:
-            tx_hashes.append(tx_hashes[-1])  # Padding se dispari
-            
-        # Calcola il livello successivo dell'albero combinando coppie di hash
-        tx_hashes = [double_sha256(tx_hashes[i] + tx_hashes[i + 1]) for i in range(0, len(tx_hashes), 2)]
+        if len(tx_hashes) % 2:
+            tx_hashes.append(tx_hashes[-1])
+        tx_hashes = [
+            double_sha256(tx_hashes[i] + tx_hashes[i+1])
+            for i in range(0, len(tx_hashes), 2)
+        ]
 
-    # Converti il Merkle Root finale in formato esadecimale (invertendo di nuovo in big-endian)
     return hexlify(tx_hashes[0][::-1]).decode()
 
 def build_block_header(version, prev_hash, merkle_root, timestamp, bits, nonce):

@@ -1,383 +1,213 @@
 # Bitcoin Mining (RPC-Based)
 
-Questo progetto è un semplice miner Bitcoin scritto interamente in Python e suddiviso in moduli. È pensato per scopi didattici e di test in ambiente **regtest**.
+Questo progetto implementa un miner Bitcoin di base che interagisce con un nodo Bitcoin Core tramite chiamate RPC (Remote Procedure Call). È progettato per scopi didattici, per illustrare i concetti fondamentali del mining e il processo di costruzione e validazione dei blocchi.
 
-## Introduzione al Mining Bitcoin
+## Concetti Fondamentali del Mining Bitcoin
 
-Il mining è il processo attraverso il quale nuove transazioni vengono confermate e aggiunte alla blockchain Bitcoin.
-I miner competono per risolvere un problema matematico complesso (proof-of-work) e il vincitore ottiene il diritto di aggiungere un nuovo blocco alla catena, ricevendo in cambio una ricompensa in bitcoin.
+Immaginiamo Bitcoin come un grande libro mastro digitale distribuito, chiamato **blockchain**. Questo libro mastro contiene la registrazione di tutte le transazioni avvenute sulla rete Bitcoin.
 
-## Architettura del Progetto
+**1. Transazioni e Blocchi:**
+   - Quando qualcuno invia Bitcoin, crea una **transazione**.
+   - Queste transazioni vengono raccolte in gruppi chiamati **blocchi**.
+   - Ogni nuovo blocco contiene un riferimento (un "hash") al blocco precedente, creando così una catena (la *blockchain*).
 
-Il miner è strutturato in moduli separati, ognuno con una responsabilità specifica:
+**2. Il Ruolo dei Miner:**
+   - I **miner** sono partecipanti della rete che competono per aggiungere il prossimo blocco alla catena.
+   - Per farlo, devono risolvere un complesso puzzle crittografico.
+   - Il loro lavoro è fondamentale per:
+     - **Confermare le transazioni:** Includendo le transazioni in un blocco, i miner le rendono ufficiali e irreversibili.
+     - **Creare nuovi Bitcoin:** Il miner che risolve per primo il puzzle viene ricompensato con nuovi Bitcoin (la "block reward") e le commissioni delle transazioni incluse nel blocco.
+     - **Mantenere la sicurezza della rete:** Il processo di mining rende estremamente difficile e costoso per chiunque tentare di alterare la storia delle transazioni.
 
-- `main.py`: Coordina l'intero processo di mining
-- `config.py`: Contiene le configurazioni del miner
-- `rpc.py`: Gestisce la comunicazione con il nodo Bitcoin
-- `block_builder.py`: Costruisce e serializza il blocco
-- `miner.py`: Implementa l'algoritmo di mining (proof-of-work), gestisce la ricerca del nonce valido e ottimizza il processo con tecniche avanzate di hashing
+**3. Il Puzzle Crittografico (Proof-of-Work):**
+   - Il puzzle consiste nel trovare un numero speciale, chiamato **nonce**.
+   - Quando il nonce viene combinato con i dati del blocco (transazioni, hash del blocco precedente, timestamp, ecc.) e processato attraverso una funzione crittografica chiamata **SHA-256**, il risultato (l'**hash del blocco**) deve essere inferiore a un certo valore target (la **difficoltà**).
+   - Trovare questo nonce richiede una grande potenza di calcolo, poiché l'unico modo è provare miliardi di nonce diversi al secondo (**hashing**).
+   - Questo processo è chiamato **Proof-of-Work (PoW)**, perché dimostra che il miner ha speso energia (lavoro computazionale) per trovare la soluzione.
 
-## Il Processo di Mining passo per passo
+**4. La Difficoltà:**
+   - La rete Bitcoin regola automaticamente la **difficoltà** del puzzle circa ogni due settimane (2016 blocchi).
+   - L'obiettivo è mantenere il tempo medio di creazione di un nuovo blocco intorno ai 10 minuti, indipendentemente dalla potenza di calcolo totale della rete.
+   - Se i blocchi vengono trovati troppo velocemente, la difficoltà aumenta; se vengono trovati troppo lentamente, diminuisce.
 
-### 1. Connessione RPC al Nodo Bitcoin
+**5. Costruzione del Blocco:**
+   - Prima di iniziare a cercare il nonce, un miner deve:
+     - **Ottenere un template di blocco:** Richiede al nodo Bitcoin le informazioni necessarie (hash del blocco precedente, transazioni in attesa, versione, timestamp attuale, bits di difficoltà).
+     - **Creare la transazione Coinbase:** È la prima transazione nel blocco e crea i nuovi Bitcoin per la ricompensa del miner. Include anche un campo per un messaggio personalizzato.
+     - **Calcolare il Merkle Root:** È un hash riassuntivo di tutte le transazioni nel blocco, organizzate in una struttura ad albero (Merkle Tree). Garantisce l'integrità delle transazioni.
+     - **Assemblare l'Header del Blocco:** Contiene la versione, l'hash del blocco precedente, il Merkle Root, il timestamp, i bits di difficoltà e il campo per il nonce (inizialmente a 0).
 
-Il mining inizia stabilendo una connessione con un nodo Bitcoin tramite il protocollo RPC (Remote Procedure Call).
-Questo permette al miner di comunicare con la rete Bitcoin per ottenere informazioni aggiornate e inviare blocchi minati.
+**6. Il Processo di Mining:**
+   - Il miner prende l'header del blocco assemblato.
+   - Inizia a provare diversi valori di **nonce**.
+   - Per ogni nonce, calcola l'hash SHA-256 dell'header.
+   - Confronta l'hash calcolato con il **target** di difficoltà.
+   - Se l'hash è inferiore al target, il miner ha trovato la soluzione! Ha "minato" il blocco.
+   - Se l'hash non è inferiore, prova un nuovo nonce e ripete il processo.
 
-```python
-def connect_rpc():
-    return AuthServiceProxy(f"http://{config.RPC_USER}:{config.RPC_PASSWORD}@{config.RPC_HOST}:{config.RPC_PORT}")
-```
+**7. Propagazione e Consenso:**
+   - Una volta trovato un blocco valido, il miner lo trasmette alla rete Bitcoin.
+   - Gli altri nodi verificano la validità del blocco (controllano la PoW, la validità delle transazioni, ecc.).
+   - Se il blocco è valido, lo aggiungono alla loro copia della blockchain e iniziano a lavorare sul blocco successivo, usando l'hash del blocco appena trovato come riferimento.
+   - Questo processo garantisce il **consenso** distribuito sulla storia delle transazioni.
 
-### 2. Richiesta del Block Template (getblocktemplate)
+In sintesi, il mining è il cuore pulsante di Bitcoin: un processo competitivo e decentralizzato che valida le transazioni, crea nuova moneta e protegge l'integrità della rete attraverso la Proof-of-Work.
 
-Il miner richiede un "template" del blocco tramite la chiamata RPC `getblocktemplate`.
-Questa chiamata, definita nel [BIP 22](https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki) e aggiornata nel [BIP 23](https://github.com/bitcoin/bips/blob/master/bip-0023.mediawiki), 
-fornisce tutte le informazioni necessarie per costruire un blocco valido:
+## Funzionamento del Programma
 
-- Hash del blocco precedente
-- Elenco delle transazioni da includere
-- Target di difficoltà
-- Timestamp corrente
-- Valore della ricompensa (coinbase)
-- Altezza del blocco
+Lo script `main.py` orchestra il processo di mining interagendo con un nodo Bitcoin Core tramite RPC. Ecco i passaggi principali eseguiti in un ciclo continuo:
 
-```python
-def get_block_template(rpc):
-    return rpc.getblocktemplate({"rules": ["segwit"]})
-```
+1.  **Test Connessione RPC (`test_rpc_connection`)**: All'avvio, verifica che sia possibile stabilire una connessione RPC con il nodo Bitcoin Core configurato in `config.py`.
 
-Specificando `"rules": ["segwit"]`, richiediamo un template compatibile con Segregated Witness ([BIP 141](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki)), 
-che permette di includere transazioni SegWit nel blocco.
+2.  **Inizio Ciclo di Mining**: Il programma entra in un loop infinito per cercare continuamente nuovi blocchi.
 
-### 3. Costruzione della Transazione Coinbase
+3.  **Connessione RPC per Template (`connect_rpc`)**: Stabilisce una nuova connessione RPC specifica per ottenere i dati del template del blocco.
 
-La transazione coinbase è la prima transazione in ogni blocco e ha caratteristiche speciali:
+4.  **Ottenimento Template Blocco (`get_block_template`)**: Chiama il metodo RPC `getblocktemplate` sul nodo Bitcoin. Questo restituisce una struttura dati JSON contenente:
+    *   `version`: La versione del blocco.
+    *   `previousblockhash`: L'hash del blocco precedente nella catena.
+    *   `transactions`: Un elenco di transazioni in attesa da includere nel blocco.
+    *   `coinbasevalue`: Il valore della ricompensa del blocco (in satoshi).
+    *   `bits`: La rappresentazione compatta della difficoltà target attuale.
+    *   `curtime`: Il timestamp attuale secondo il nodo.
+    *   Altre informazioni utili.
+    Se il template non può essere ottenuto, attende e riprova.
 
-- Non ha input reali (usa un input fittizio con hash tutto zero)
-- Crea nuovi bitcoin come ricompensa per il miner
-- Può contenere dati arbitrari nello scriptSig
+5.  **Gestione Dati Witness (`ensure_witness_data`)**: Per le transazioni SegWit (Segregated Witness), il template iniziale potrebbe non includere tutti i dati witness necessari. Questa funzione effettua chiamate RPC aggiuntive (`getrawtransaction`) per recuperare i dati completi e aggiornare le transazioni nel template.
 
-Secondo il [BIP 34](https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki), la transazione coinbase deve includere l'altezza del blocco come primo elemento dello scriptSig:
+6.  **Costruzione Transazione Coinbase (`build_coinbase_transaction`)**: Crea la transazione speciale *coinbase*:
+    *   Include l'altezza del blocco corrente (`height` dal template).
+    *   Imposta l'output per inviare la ricompensa del blocco (`coinbasevalue`) e le eventuali commissioni all'indirizzo del miner specificato in `config.WALLET_ADDRESS` (ottenendo lo `scriptPubKey` tramite `getaddressinfo`).
+    *   Aggiunge un messaggio personalizzato (`config.COINBASE_MESSAGE`) nell'input della coinbase.
+    *   Restituisce la transazione serializzata in esadecimale (`coinbase_tx`) e il suo ID (`coinbase_txid`).
 
-```python
-def tx_encode_coinbase_height(height):
-    height_bytes = height.to_bytes((height.bit_length() + 7) // 8, 'little')
-    return f"{len(height_bytes):02x}" + height_bytes.hex()
-```
+7.  **Calcolo e Modifica Target (`decode_nbits`)**: 
+    *   Decodifica il campo `bits` (formato compatto della difficoltà) dal template per ottenere il target di difficoltà completo (`original_target`) in formato esadecimale a 64 caratteri.
+    *   **Solo per `regtest`**: Se la rete è `regtest` (rilevata tramite `getblockchaininfo`), permette di impostare un `DIFFICULTY_FACTOR` in `config.py` per rendere il target artificialmente più difficile (dividendo il target numerico per il fattore). Questo è utile per testare il mining su regtest simulando un ambiente di difficoltà maggiore. Su `testnet` o `mainnet`, il fattore è forzato a 1.0.
+    *   Stampa il target originale e quello modificato (se applicabile).
 
-Inoltre, il nostro miner permette di includere un messaggio personalizzato nella transazione coinbase:
+8.  **Calcolo Merkle Root (`calculate_merkle_root`)**: 
+    *   Prende il `coinbase_txid` e gli ID di tutte le altre transazioni (`txid`) dal template.
+    *   Costruisce un Merkle Tree con questi hash.
+    *   Calcola e restituisce la radice dell'albero (Merkle Root), un singolo hash che rappresenta tutte le transazioni nel blocco.
 
-```python
-if coinbase_message:
-    message_bytes = coinbase_message.encode('utf-8')
-    script_sig_hex += "6a" + f"{len(message_bytes):02x}" + message_bytes.hex()
-```
+9.  **Costruzione Header Blocco (`build_block_header`)**: 
+    *   Assembla l'header del blocco di 80 byte in formato esadecimale, concatenando:
+        *   `version` (4 byte, little-endian)
+        *   `previousblockhash` (32 byte, hash invertito byte per byte)
+        *   `merkle_root` (32 byte, hash invertito byte per byte)
+        *   `curtime` (4 byte, little-endian)
+        *   `bits` (4 byte, little-endian)
+        *   `nonce` (4 byte, little-endian, inizializzato a 0)
 
-La transazione coinbase include anche un output che assegna la ricompensa all'indirizzo del miner e, se necessario, un output per il witness commitment (per supportare SegWit).
+10. **Avvio Watchdog (`watchdog_bestblock` in un Thread)**:
+    *   Avvia un thread separato che monitora continuamente l'hash del blocco più recente sulla rete (`getbestblockhash`) ogni `CHECK_INTERVAL` secondi.
+    *   Se rileva un nuovo blocco (l'hash cambia), imposta un `threading.Event` (`stop_event`). Questo segnala al processo di mining principale di interrompersi, poiché il lavoro attuale è diventato obsoleto.
 
-### 4. Calcolo del Merkle Root
+11. **Mining (`mine_block`)**: 
+    *   Questa è la funzione che esegue la Proof-of-Work.
+    *   Prende l'header del blocco (`header_hex`) e il target modificato (`modified_target`).
+    *   Entra in un ciclo:
+        *   Prova un valore di `nonce` (la strategia di incremento/randomizzazione dipende da `config.NONCE_MODE`).
+        *   Aggiorna il campo nonce nell'header.
+        *   Calcola il doppio hash SHA-256 dell'header aggiornato.
+        *   Confronta l'hash risultante (come intero) con il target (come intero).
+        *   Se l'hash è inferiore al target, ha trovato una soluzione! Restituisce l'header vincente (`mined_header_hex`), il `nonce` trovato e l'hashrate stimato.
+        *   Controlla periodicamente lo `stop_event`. Se è stato impostato dal watchdog, interrompe il mining e restituisce `None` per indicare l'interruzione.
 
-Il Merkle Root è un hash che riassume tutte le transazioni del blocco in un unico valore di 32 byte. Viene calcolato costruendo un albero binario (Merkle Tree) dove:
+12. **Gestione Interruzione**: 
+    *   Dopo il ritorno da `mine_block`, ferma esplicitamente il thread watchdog.
+    *   Se `mine_block` ha restituito `None` (quindi è stato interrotto), stampa un messaggio e ricomincia il ciclo dal passo 3 per ottenere un nuovo template aggiornato.
 
-1. Le foglie sono gli hash delle transazioni
-2. I nodi interni sono gli hash della concatenazione dei loro figli
-3. La radice dell'albero è il Merkle Root
+13. **Serializzazione Blocco Completo (`serialize_block`)**: 
+    *   Se il mining ha avuto successo (non interrotto), prende l'header vincente (`mined_header_hex`), la transazione coinbase (`coinbase_tx`) e l'elenco delle altre transazioni (`template['transactions']`).
+    *   Concatena questi elementi nel formato corretto per creare i dati completi del blocco serializzato in esadecimale, pronto per essere inviato al nodo.
 
-```python
-def calculate_merkle_root(coinbase_tx, transactions):
-    tx_hashes = [coinbase_hash] + [tx["hash"] for tx in transactions]
-    while len(tx_hashes) > 1:
-        if len(tx_hashes) % 2 == 1:
-            tx_hashes.append(tx_hashes[-1])  # Padding se dispari
-        tx_hashes = [double_sha256(tx_hashes[i] + tx_hashes[i + 1]) for i in range(0, len(tx_hashes), 2)]
-    return tx_hashes[0]
-```
+14. **Invio Blocco (`submit_block`)**: 
+    *   Stabilisce una nuova connessione RPC.
+    *   Chiama il metodo RPC `submitblock` passando i dati del blocco serializzato.
+    *   Il nodo Bitcoin Core verificherà il blocco. Se valido, lo aggiungerà alla blockchain e lo propagherà sulla rete.
+    *   Stampa il risultato dell'invio (successo o errore).
 
-Se il numero di nodi a un livello è dispari, l'ultimo nodo viene duplicato. 
-Questo garantisce che ogni blocco abbia un Merkle Root unico e permette di verificare l'appartenenza di una transazione al blocco senza scaricare tutte le transazioni (SPV - Simplified Payment Verification).
+15. **Pausa e Ripetizione**: Attende brevemente (`time.sleep(1)`) prima di ricominciare il ciclo dal passo 2 per minare il blocco successivo.
 
-### 5. Costruzione dell'Header del Blocco
+16. **Gestione Errori**: Un blocco `try...except` cattura eventuali eccezioni durante il ciclo, le stampa e permette al ciclo di continuare.
 
-L'header del blocco è composto da 6 campi per un totale di 80 byte:
+## Moduli Ausiliari
 
-1. **Version** (4 byte): Versione del protocollo
-2. **Previous Block Hash** (32 byte): Hash del blocco precedente
-3. **Merkle Root** (32 byte): Hash che riassume tutte le transazioni
-4. **Timestamp** (4 byte): Ora di creazione del blocco (secondi da epoch Unix)
-5. **Bits** (4 byte): Difficoltà target in formato compatto
-6. **Nonce** (4 byte): Valore modificato durante il mining per trovare un hash valido
+Il codice è organizzato in moduli per chiarezza:
 
-```python
-def build_block_header(version, prev_hash, merkle_root, timestamp, bits, nonce):
-    header = (
-        struct.pack("<I", version) +               # Version (4 byte, little-endian)
-        unhexlify(prev_hash)[::-1] +               # Previous Block Hash (32 byte, invertito)
-        unhexlify(merkle_root)[::-1] +             # Merkle Root (32 byte, invertito)
-        struct.pack("<I", timestamp) +             # Timestamp (4 byte, little-endian)
-        unhexlify(bits)[::-1] +                    # Bits/Target (4 byte, invertito)
-        struct.pack("<I", nonce)                   # Nonce (4 byte, little-endian)
-    )
-    return hexlify(header).decode()
-```
-
-### 6. Decodifica del Target di Difficoltà
-
-In Bitcoin, la difficoltà è codificata nel campo 'bits' dell'header del blocco. Il formato è compatto: i primi 8 bit rappresentano l'esponente, i restanti 24 bit rappresentano la mantissa. Questa funzione converte questo formato compatto nel target effettivo:
-
-```python
-def decode_nbits(nBits: int) -> str:
-    exponent = (nBits >> 24) & 0xff
-    significand = nBits & 0x007fffff
-    return f"{(significand << (8 * (exponent - 3))):064x}"
-```
-
-Il miner permette di modificare la difficoltà mediante il parametro `DIFFICULTY_FACTOR` nel file `config.py`. Questo è utile per scopi didattici in ambiente regtest, 
-dove è possibile rendere il mining più facile o più difficile.
-
-### 7. Processo di Mining (Proof-of-Work) e Controllo Nuovo Blocco
-
-Il mining è il processo di ricerca di un nonce che, aggiunto all'header del blocco, produce un hash inferiore al target di difficoltà. 
-Questo processo richiede molti tentativi e garantisce la sicurezza della blockchain.
-
-Il nostro miner offre tre modalità differenti per l'elaborazione del nonce:
-
-- **Incremental**: Il nonce viene incrementato sequenzialmente da 0 a 2^32-1
-- **Random**: Ad ogni iterazione viene scelto un nonce casuale
-- **Mixed**: Inizia con un nonce casuale e poi procede incrementalmente
-
-```python
-def mine_block(header_hex, target_hex, nonce_mode="incremental", stop_event: threading.Event | None = None):
-    target = int(target_hex, 16)
-    
-    # Inizializza il nonce in base alla modalità selezionata
-    if nonce_mode == "incremental":
-        nonce = 0
-    elif nonce_mode == "random" or nonce_mode == "mixed":
-        nonce = random.randint(0, 0xFFFFFFFF)
-    
-    # Loop principale di mining
-    while True:
-        # Controllo evento di stop
-        if stop_event is not None and stop_event.is_set():
-            return None, None, None # Interrompi se richiesto
-
-        full_header = base_header + struct.pack("<I", nonce)
-        block_hash = double_sha256(full_header)
-        
-        # Verifica se l'hash trovato è valido (inferiore al target)
-        if int.from_bytes(block_hash, 'little') < target:
-            return hexlify(full_header).decode(), nonce, hashrate
-        
-        # Aggiorna il nonce per il prossimo tentativo
-        if nonce_mode == "incremental" or nonce_mode == "mixed":
-            nonce = (nonce + 1) % 0x100000000
-        elif nonce_mode == "random":
-            nonce = random.randint(0, 0xFFFFFFFF)
-```
-
-Durante il mining, il timestamp viene periodicamente aggiornato per mantenere il blocco "fresco". Inoltre, vengono calcolate e visualizzate statistiche come l'hashrate (hash al secondo).
-
-### Ottimizzazioni nel Modulo Miner
-
-Il modulo `miner.py` implementa diverse ottimizzazioni per massimizzare l'efficienza del mining:
-
-1. **Midstate Caching**: Calcola e memorizza lo stato intermedio dell'hash SHA-256 per i primi 76 byte dell'header (tutti tranne il nonce), evitando di ricalcolare l'hash completo ad ogni tentativo.
-
-2. **Batch Processing**: Elabora più nonce in sequenza per ogni iterazione, riducendo l'overhead del ciclo principale.
-
-3. **Memory Views**: Utilizza `memoryview` per accedere direttamente ai byte del nonce nell'header, evitando copie inutili in memoria.
-
-4. **Riutilizzo Contesti**: Riutilizza i contesti SHA-256 per ridurre l'allocazione di memoria.
-
-5. **Modalità di Mining Multiple**:
-   - **Incrementale**: Inizia da 0 e incrementa il nonce sequenzialmente
-   - **Random**: Genera nonce casuali per esplorare diverse parti dello spazio di ricerca
-   - **Mixed**: Combina approcci incrementali e casuali
-
-6. **Aggiornamento Timestamp**: Aggiorna periodicamente il timestamp per mantenere il blocco valido durante sessioni di mining prolungate.
-
-### 8. Serializzazione del Blocco
-
-Una volta trovato un nonce valido, il blocco completo viene serializzato nel formato richiesto dal protocollo Bitcoin:
-
-```python
-def serialize_block(header_hex, coinbase_tx, transactions):
-    num_tx = len(transactions) + 1  # +1 per includere la coinbase
-    num_tx_hex = encode_varint(num_tx)
-    transactions_hex = "".join(tx["data"] for tx in transactions)
-    block_hex = header_hex + num_tx_hex + coinbase_tx + transactions_hex
-    return block_hex
-```
-
-Un blocco Bitcoin completo è composto da:
-1. Block Header (80 byte)
-2. Transaction Counter (numero di transazioni in formato VarInt)
-3. Transactions (tutte le transazioni serializzate, iniziando con la coinbase)
-
-### 9. Invio del Blocco alla Rete
-
-Infine, il blocco minato viene inviato al nodo Bitcoin tramite la chiamata RPC `submitblock`:
-
-```python
-def submit_block(rpc, serialized_block):
-    result = rpc.submitblock(serialized_block)
-    if result is None:
-        print("\nBlocco accettato nella blockchain!")
-    else:
-        print(f"\nErrore nell'invio del blocco: {result}")
-```
-
-Se il blocco è valido e contiene un proof-of-work sufficiente, il nodo lo accetterà e lo propagherà agli altri nodi della rete.
-
-## Personalizzazione del Miner
-
-Il miner permette diverse personalizzazioni tramite il file `config.py`:
-
-- **DIFFICULTY_FACTOR**: Modifica la difficoltà di mining (solo in regtest)
-- **NONCE_MODE**: Cambia la strategia di ricerca del nonce ("incremental", "random" o "mixed")
-- **COINBASE_MESSAGE**: Personalizza il messaggio nella transazione coinbase
-- **TIMESTAMP_UPDATE_INTERVAL**: Imposta l'intervallo di aggiornamento del timestamp durante il mining
-
-## Avvertenze
-
-**Attenzione**: Questo miner è concepito esclusivamente per scopi di test in ambiente Regtest o Testnet e non è adatto al mining competitivo in mainnet. 
-Il mining su mainnet richiede hardware specializzato (ASIC) e non è economicamente sostenibile con hardware generico.
+*   **`rpc.py`**: Contiene le funzioni per interagire con il nodo Bitcoin Core tramite RPC (connessione, chiamate specifiche come `getblocktemplate`, `submitblock`, `getrawtransaction`, `getbestblockhash`, `getaddressinfo`).
+*   **`block_builder.py`**: Contiene le funzioni per costruire le varie parti del blocco (decodifica `nBits`, calcolo Merkle Root, costruzione header, costruzione coinbase, serializzazione blocco, verifica transazioni SegWit).
+*   **`miner.py`**: Contiene la funzione `mine_block` che implementa il ciclo di hashing per la Proof-of-Work.
+*   **`config.py`**: File di configurazione per i parametri RPC (host, porta, utente, password), l'indirizzo del wallet del miner, il messaggio coinbase, il fattore di difficoltà per regtest e la modalità di ricerca del nonce.
+*   **`utils.py`**: Funzioni di utilità generale (es. conversioni esadecimali, hashing SHA-256).
 
 ## Guida all'Installazione e all'Uso
 
 ### Prerequisiti
 
-- Python 3.7 o superiore
-- Bitcoin Core (versione 0.21.0 o superiore)
-- Connessione a Internet (per scaricare le dipendenze)
+*   **Python 3.7+**: Assicurati di avere Python installato.
+*   **Bitcoin Core**: È necessario un nodo Bitcoin Core in esecuzione, sincronizzato (o in modalità `regtest` o `testnet`) e configurato per accettare connessioni RPC. Modifica il file `bitcoin.conf` del tuo nodo aggiungendo o verificando queste linee:
+    ```
+    server=1
+    rpcuser=tuo_utente_rpc
+    rpcpassword=tua_password_rpc
+    rpcallowip=127.0.0.1  # O l'IP da cui eseguirai lo script
+    ```
+    *Ricorda di usare credenziali robuste.*
+*   **Libreria `python-bitcoinrpc`**: Questa libreria facilita le chiamate RPC. Installala con pip:
+    ```bash
+    pip install python-bitcoinrpc
+    ```
 
-### 1. Installazione di Bitcoin Core
+### Configurazione (`config.py`)
 
-1. Scarica Bitcoin Core dal [sito ufficiale](https://bitcoincore.org/en/download/) o da [GitHub](https://github.com/bitcoin/bitcoin/releases)
-2. Installa Bitcoin Core seguendo le istruzioni per il tuo sistema operativo
-3. Crea una directory per i dati di Bitcoin (ad esempio `~/.bitcoin` su Linux/Mac o `C:\Users\Username\AppData\Roaming\Bitcoin` su Windows)
+Il file `config.py` contiene tutte le impostazioni necessarie per il funzionamento del miner. Ecco una guida dettagliata per ogni parametro:
 
-### 2. Configurazione di Bitcoin Core
+| Parametro | Descrizione | Valori/Note | Esempio |
+|-----------|-------------|-------------|---------|
+| **Configurazione RPC** |
+| `RPC_USER` | Nome utente per l'autenticazione RPC | Deve corrispondere a `rpcuser` in `bitcoin.conf` | `"bitcoinrpc"` |
+| `RPC_PASSWORD` | Password per l'autenticazione RPC | Deve corrispondere a `rpcpassword` in `bitcoin.conf`. Usa password forte | `"your_strong_password_here"` |
+| `RPC_HOST` | Indirizzo IP del nodo Bitcoin Core | `127.0.0.1` se locale, altrimenti IP del server | `"127.0.0.1"` |
+| `RPC_PORT` | Porta per le chiamate RPC | Mainnet: 8332<br>Testnet: 48332<br>Regtest: 18443 | `18443`  |
+| **Configurazione Wallet** |
+| `WALLET_ADDRESS` | Indirizzo Bitcoin per le ricompense | Generabile con `getnewaddress`.<br>Verifica tipo rete corretto | `"bcrt1q6j8j76uz8xf3qrxzh7ce3mpj8fk5wwkxw4pkxl"` |
+| **Personalizzazione Coinbase** |
+| `COINBASE_MESSAGE` | Messaggio nel blocco | Max 100 bytes.<br>Codificato in ASCII.<br>Per firme/messaggi storici | `"/Ciao a tutti!/"` |
+| **Configurazione Difficoltà** |
+| `DIFFICULTY_FACTOR` | Moltiplicatore difficoltà (solo regtest) | ≥ 1.0<br>1.0 = normale<br>2.0 = doppia<br>Forzato a 1.0 su main/testnet | `4.0` |
+| **Strategia Mining** |
+| `NONCE_MODE` | Metodo ricerca nonce | `'increment'`: Sequenziale<br>`'random'`: Casuale<br>`'mixed'`: Ibrido casuale/sequenziale | `'mixed'` |
 
-Crea un file `bitcoin.conf` nella directory dei dati di Bitcoin con il seguente contenuto:
+### Avvio del Miner
 
-```
-# Abilita la modalità regtest (ambiente di test locale)
-regtest=1
+Assicurati che il tuo nodo Bitcoin Core sia in esecuzione e completamente avviato.
 
-# Abilita il server RPC
-server=1
-rpcallowip=127.0.0.1
+Esegui il miner dalla directory del progetto con il comando:
 
-# Credenziali RPC (cambia questi valori!)
-rpcuser=tuousername
-rpcpassword=tuapassword
-
-# Porta RPC (default per regtest: 18443)
-rpcport=18443
-
-# Abilita l'indicizzazione delle transazioni
-txindex=1
-```
-
-### 3. Avvio di Bitcoin Core in modalità regtest
-
-- **Windows**: Avvia Bitcoin Core con il parametro `-regtest`
-- **Linux/Mac**: Esegui `bitcoind -regtest` da terminale
-
-Puoi verificare che il nodo sia in esecuzione con il comando:
-```
-bitcoin-cli -regtest getblockchaininfo
-```
-
-### 4. Configurazione del Miner
-
-1. Clona o scarica questo repository
-2. Installa le dipendenze Python:
-   ```
-   pip install -r requirements.txt
-   ```
-3. Modifica il file `config.py` con i tuoi parametri:
-
-```python
-# Configurazione RPC
-RPC_USER = "tuousername"                # Username per l'autenticazione RPC
-RPC_PASSWORD = "tuapassword"            # Password per l'autenticazione RPC
-RPC_HOST = "127.0.0.1"                  # Indirizzo IP del nodo
-RPC_PORT = 18443                        # Porta RPC del nodo (default per regtest)
-
-# Configurazione Wallet
-WALLET_ADDRESS = "tuoindirizzo"         # Indirizzo del wallet del miner
-
-# Parametri Mining
-DIFFICULTY_FACTOR = 100000000           # Fattore per modificare la difficoltà
-NONCE_MODE = "mixed"                    # Modalità di aggiornamento del nonce
-TIMESTAMP_UPDATE_INTERVAL = 30          # Intervallo aggiornamento timestamp
-
-# Messaggio Coinbase
-COINBASE_MESSAGE = "/Il tuo messaggio/" # Messaggio personalizzato
-```
-
-### 5. Generazione di un Indirizzo per Ricevere la Ricompensa
-
-Per ottenere un indirizzo dove ricevere le ricompense del mining:
-
-```
-bitcoin-cli -regtest getnewaddress "Mining Rewards" bech32
-```
-
-Copia l'indirizzo generato nel campo `WALLET_ADDRESS` del file `config.py`.
-
-### 6. Avvio del Miner
-
-Esegui il miner con il comando:
-
-```
+```bash
 python main.py
 ```
 
-Il programma si connetterà al nodo Bitcoin, costruirà un blocco e inizierà il processo di mining.
+Il programma si connetterà al nodo, inizierà a costruire blocchi candidati e avvierà il processo di hashing per trovare un nonce valido. Verranno visualizzati messaggi sullo stato del processo, inclusi i target di difficoltà, le transazioni incluse e l'hashrate.
 
-Durante il mining, un thread separato (watchdog) monitora costantemente la blockchain per nuovi blocchi. Se viene rilevato un nuovo blocco sulla rete, il processo di mining corrente viene interrotto e il programma ricomincia il ciclo ottenendo un nuovo template aggiornato. Questo assicura che il miner lavori sempre sull'ultimo stato della catena.
+Il thread watchdog monitorerà la rete. Se un altro miner trova un blocco prima di te, il tuo processo di mining verrà interrotto e riavviato con i dati aggiornati.
 
-Una volta trovato un blocco valido prima che ne venga trovato un altro sulla rete, il miner lo invierà al nodo e visualizzerà un messaggio di conferma.
+Se il tuo miner trova un blocco valido, lo invierà al nodo e visualizzerà un messaggio di conferma o un eventuale errore restituito dal nodo.
 
-### 7. Verifica del Blocco Minato
+L'output del programma mostrerà:
+- Informazioni sulla connessione RPC stabilita
+- Il target di difficoltà corrente (originale e modificato se in regtest)
+- Le transazioni incluse nel blocco candidato
+- L'hashrate corrente durante il mining
+- Messaggi di stato quando viene trovato un nuovo blocco sulla rete
+- Conferma o errori quando si tenta di inviare un blocco minato
+- Statistiche periodiche sulle performance del mining
 
-Puoi verificare che il blocco sia stato aggiunto alla blockchain con:
-
-```
-bitcoin-cli -regtest getblockcount
-bitcoin-cli -regtest getblockhash <numero_blocco>
-bitcoin-cli -regtest getblock <hash_blocco>
-```
-
-### 8. Verifica del Saldo
-
-Per verificare che la ricompensa sia stata accreditata al tuo indirizzo:
-
-```
-bitcoin-cli -regtest getbalance
-```
-
-Nota: i blocchi minati devono maturare (100 conferme) prima che la ricompensa possa essere spesa.
-
-## Risoluzione dei Problemi
-
-- **Errore di connessione RPC**: Verifica che Bitcoin Core sia in esecuzione e che le credenziali RPC nel file `config.py` corrispondano a quelle nel file `bitcoin.conf`
-- **Mining troppo lento**: Diminuisci il valore di `DIFFICULTY_FACTOR` nel file `config.py` per rendere il mining più facile (solo in ambiente regtest)
-
-## Riferimenti
-
-- [BIP 22: getblocktemplate](https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki)
-- [BIP 23: getblocktemplate - Pooled Mining](https://github.com/bitcoin/bips/blob/master/bip-0023.mediawiki)
-- [BIP 34: Block v2, Height in Coinbase](https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki)
-- [BIP 141: Segregated Witness](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki)
-- [Bitcoin Developer Reference](https://developer.bitcoin.org/reference/)
-- [Bitcoin Core Documentation](https://bitcoin.org/en/bitcoin-core/)
-- [Bitcoin Core RPC Commands](https://developer.bitcoin.org/reference/rpc/)
+**Nota:** Minare sulla rete principale (mainnet) con questo script è altamente improbabile che porti a trovare un blocco a causa dell'enorme potenza di calcolo richiesta. È consigliato utilizzarlo su `regtest` o `testnet` per scopi didattici e di sperimentazione.
 
 ## Licenza
 
-Distribuito sotto la licenza MIT.
+Questo progetto è rilasciato sotto la licenza MIT.
