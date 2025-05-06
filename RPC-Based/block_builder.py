@@ -83,36 +83,41 @@ def encode_varint(value):
     # Se il valore è troppo grande, solleva un'eccezione
     raise ValueError("Il valore supera il limite massimo per VarInt (2^64-1)")
 
-def tx_encode_coinbase_height(height):
+def tx_encode_coinbase_height(height: int) -> str:
     """
-    Codifica l'altezza del blocco secondo BIP34 per includerla nello scriptSig della transazione coinbase.
-    
+    Codifica l'altezza del blocco secondo BIP34 (formato CScriptNum) per includerla
+    nello scriptSig della transazione coinbase.
     Args:
-        height: L'altezza del blocco da codificare
-        
+        height: L'altezza del blocco da codificare.
     Returns:
-        str: La rappresentazione esadecimale dell'altezza codificata
-        
+        str: La rappresentazione esadecimale dell'altezza codificata.
     Raises:
-        ValueError: Se l'altezza del blocco è minore di 1
-    
+        ValueError: Se l'altezza del blocco è minore di 0.
     Note:
-        BIP34 richiede che l'altezza del blocco sia inclusa come primo elemento nello scriptSig
-        della transazione coinbase. Questo serve per evitare collisioni di hash tra blocchi diversi
-        che potrebbero altrimenti avere transazioni coinbase identiche.
-        
-        Il formato è: [lunghezza in byte dell'altezza] + [altezza in little-endian]
+        BIP34 richiede che l'altezza del blocco sia inclusa come primo elemento
+        nello scriptSig della transazione coinbase.
+        Il formato è: [lunghezza in byte dell'altezza] + [altezza in CScriptNum].
+        CScriptNum per numeri positivi:
+        - Codifica little-endian.
+        - Numero minimo di byte.
+        - Se il bit più significativo dell'ultimo byte è 1 (cioè >= 0x80),
+          e il numero non È zero, aggiungere un byte 0x00 alla fine
+          per indicare che È positivo.
+        Per altezza 0, il CScriptNum È 0x00 (OP_0), quindi i dati sono b'' e la lunghezza è 0.
     """
-    # Verifica che l'altezza sia valida
-    if height < 1:
-        raise ValueError("L'altezza del blocco deve essere maggiore di 0")
-
-    # Converte l'altezza in bytes (formato little-endian)
-    # Il calcolo (height.bit_length() + 7) // 8 determina il numero minimo di byte necessari
-    height_bytes = height.to_bytes((height.bit_length() + 7) // 8, 'little')
-    
-    # Restituisce: [lunghezza in byte dell'altezza in hex] + [altezza in hex]
-    return f"{len(height_bytes):02x}" + height_bytes.hex()
+    if height < 0:
+        raise ValueError("L'altezza del blocco deve essere maggiore o uguale a 0.")
+    if height == 0:
+        return "00"
+    result = bytearray()
+    v = height
+    while v:
+        result.append(v & 0xff)
+        v >>= 8
+    # Se il bit più significativo dell'ultimo byte è 1, aggiungi un byte 0x00
+    if result and (result[-1] & 0x80):
+        result.append(0x00)
+    return f"{len(result):02x}" + result.hex()
 
 def is_segwit_tx(raw_hex: str) -> bool:
     """
