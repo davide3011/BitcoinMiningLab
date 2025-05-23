@@ -1,4 +1,4 @@
-import struct, random, time, hashlib
+import struct, random, time, hashlib, logging
 from threading import Event
 from binascii import hexlify, unhexlify
 import config
@@ -9,9 +9,12 @@ Implementa le funzioni necessarie per eseguire il mining di blocchi Bitcoin,
 includendo l'algoritmo di hashing SHA-256 e la ricerca del nonce valido.
 """
 
+log = logging.getLogger(__name__)
+
 # Costanti per ottimizzazione e logging
 BATCH   = 100         # Numero di nonce da provare per iterazione
 LOG_INT = 1_000_000    # Intervallo di tentativi tra un log e l'altro
+RATE_INT = 2           # secondi fra due log dell’hashrate
 
 # ---------------------------------------------------------------------------
 # utility
@@ -72,7 +75,7 @@ def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"
         tuple | None: (header_hex_completo, nonce_valido, hashrate_medio)  
                       oppure (None, None, None) se lo stop_event è stato settato.
     """
-    print(f"\n=== Inizio del Mining | Modalità: {nonce_mode} ===\n")
+    log.info("Avvio mining - modalità %s", nonce_mode)
 
     # ---- decodifica header (80 B) ----
     version   = unhexlify(header_hex[0:8])
@@ -106,7 +109,7 @@ def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"
     while True:
         # interruzione prima di ogni batch
         if stop_event is not None and stop_event.is_set():
-            print("\nMining interrotto: nuovo blocco rilevato")
+            log.info("Mining interrotto: nuovo blocco rilevato")
             return None, None, None
 
         # ---- aggiornamento timestamp ----
@@ -117,13 +120,14 @@ def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"
             mid     = _midstate(base76)
             header[:76] = base76
             last_tsu = time.time()
-            print(f"\033[1A\033[K\rTimestamp aggiornato: {int.from_bytes(ts_bytes, 'little')}")
+            log.debug("Timestamp header aggiornato: %d",
+                      int.from_bytes(ts_bytes, "little"))
 
         # ---- batch di BATCH nonce ----
         for i in range(BATCH):
             # check rapido anche dentro il loop per ridurre la latenza
             if stop_event is not None and stop_event.is_set():
-                print("\nMining interrotto: nuovo blocco rilevato")
+                log.info("Mining interrotto: nuovo blocco rilevato")
                 return None, None, None
 
             n = (nonce + i) & 0xFFFFFFFF
@@ -137,11 +141,9 @@ def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"
             if digest[::-1] < target_be:
                 total = time.time() - start_t
                 hashrate = (attempts + i + 1) / total if total else 0
-                print("\033[K\rBlocco trovato!")
-                print(f"\033[K\rNonce: {n}")
-                print(f"\033[K\rHash: {digest[::-1].hex()}")
-                print(f"\033[K\rTentativi: {attempts + i + 1:,}")
-                print(f"\033[K\rTempo: {total:.2f}s | Hashrate medio: {hashrate/1000:.2f} kH/s")
+                log.info("Blocco trovato - nonce=%d tentativi=%d tempo=%.2fs hashrate=%.2f kH/s",
+                         n, attempts + i + 1, total, hashrate/1000)
+                log.info("Hash valido: %s", digest[::-1].hex())
 
                 return hexlify(bytes(header)).decode(), n, hashrate
 
@@ -150,18 +152,24 @@ def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"
         nonce = (nonce + BATCH) & 0xFFFFFFFF
 
         # ---- log periodico ----
+        now = time.time()
+        # 1) tentativi: LOG_INT rimane utile per avere un “check” ogni X hash
         if attempts % LOG_INT == 0:
-            now  = time.time()
+            tmp = mid.copy(); tmp.update(nonce_view)
+            dbg_hash = double_sha256(tmp.digest())
             rate = (attempts - last_rate_n) / (now - last_rate_t)
+            log.debug("Stato mining - tentativi=%d nonce=%d hash=%s rate=%.2f kH/s",
+                      attempts, nonce, dbg_hash[::-1].hex(), rate/1000)
+
+        # 2) hashrate istantaneo: log ogni RATE_INT secondi
+        if now - last_rate_t >= RATE_INT:
+            rate = (attempts - last_rate_n) / (now - last_rate_t)
+            log.info("Hashrate istantaneo: %.2f kH/s", rate/1000)
             last_rate_t, last_rate_n = now, attempts
 
             struct.pack_into("<I", header, 76, nonce)
             tmp = mid.copy(); tmp.update(nonce_view)
             dbg_hash = double_sha256(tmp.digest())
 
-            print("\033[K\r----- Stato Mining -----")
-            print(f"\033[K\rTentativi: {attempts:,}")
-            print(f"\033[K\rNonce: {nonce}")
-            print(f"\033[K\rHash: {dbg_hash[::-1].hex()}")
-            print(f"\033[K\rHashrate: {rate/1000:,.2f} kH/s")
-            print("\033[5F", end="")   # risale di 5 righe per sovrascrivere
+            log.debug("Stato mining - tentativi=%d nonce=%d hash=%s rate=%.2f kH/s",
+                      attempts, nonce, dbg_hash[::-1].hex(), rate/1000)

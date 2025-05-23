@@ -1,4 +1,4 @@
-import time, threading, config
+import time, threading, config, hashlib, logging
 from rpc import (
     connect_rpc, test_rpc_connection, get_block_template, ensure_witness_data,
     submit_block, get_best_block_hash 
@@ -8,6 +8,8 @@ from block_builder import (
     serialize_block, build_coinbase_transaction
 )
 from miner import mine_block
+
+log = logging.getLogger(__name__)
 
 # -- parametro: intervallo (secondi) fra due poll del best-block --------------
 CHECK_INTERVAL = 20
@@ -35,7 +37,7 @@ def main():
 
     while True:
         try:
-            print("\033[K\r\n=== Nuovo ciclo di mining ===", end="\r\n\n")
+            log.info("=== Nuovo ciclo di mining ===")
 
             # STEP 1) Ottieni una nuova connessione per il template
             rpc_template = connect_rpc()
@@ -43,7 +45,7 @@ def main():
             # STEP 2) GET BLOCK TEMPLATE
             template = get_block_template(rpc_template)
             if not template:
-                print("\033[K\rERRORE: Impossibile ottenere il template del blocco. Riprovo...", end="\r\n")
+                log.error("Impossibile ottenere il template del blocco. Riprovo...")
                 time.sleep(5)
                 continue
 
@@ -54,7 +56,7 @@ def main():
             witness_tx   = sum(1 for tx in template["transactions"] if is_segwit_tx(tx["data"]))
             legacy_tx    = tot_tx - witness_tx
 
-            print(f"Transazioni nel template: totali = {tot_tx}  |  legacy = {legacy_tx}  |  segwit = {witness_tx}")
+            log.info(f"Transazioni nel template: totali = {tot_tx}  |  legacy = {legacy_tx}  |  segwit = {witness_tx}")
 
             # STEP 4) COSTRUISCI COINBASE
             miner_info = rpc_template.getaddressinfo(config.WALLET_ADDRESS)
@@ -62,7 +64,7 @@ def main():
             coinbase_tx, coinbase_txid = build_coinbase_transaction(
                 template, miner_script_pubkey, config.COINBASE_MESSAGE
             )
-            print(f"\033[K\rMessaggio nella coinbase: {config.COINBASE_MESSAGE}", end="\r\n")
+            log.info(f"Messaggio nella coinbase: {config.COINBASE_MESSAGE}")
 
             # STEP 5) MODIFICA TARGET
             blockchain_info = rpc_template.getblockchaininfo()
@@ -71,18 +73,18 @@ def main():
             if network == "regtest":
                 DIFFICULTY_FACTOR = float(config.DIFFICULTY_FACTOR)
                 if DIFFICULTY_FACTOR < 1:
-                    print("\033[K\rAttenzione: DIFFICULTY_FACTOR deve essere >= 1. Impostazione a 1.0", end="\r\n")
+                    log.warning("DIFFICULTY_FACTOR deve essere >= 1. Impostazione a 1.0")
                     DIFFICULTY_FACTOR = 1.0
             else:  # testnet o mainnet
                 DIFFICULTY_FACTOR = 1.0
-                print(f"\033[K\rRete {network} rilevata: DIFFICULTY_FACTOR impostato a 1.0", end="\r\n")
+                log.info(f"Rete {network} rilevata: DIFFICULTY_FACTOR impostato a 1.0")
 
             nBits_int = int(template["bits"], 16)
             original_target = decode_nbits(nBits_int)
             modified_target_int = int(original_target, 16) // int(DIFFICULTY_FACTOR)
             modified_target = f"{modified_target_int:064x}"
-            print(f"\033[K\rTarget originale: {original_target}", end="\r\n")
-            print(f"\033[K\rTarget modificato ({DIFFICULTY_FACTOR}x più difficile): {modified_target}", end="\r\n")
+            log.debug(f"Target originale: {original_target}")
+            log.info(f"Target modificato ({DIFFICULTY_FACTOR}x più difficile): {modified_target}")
 
             # STEP 6) CALCOLA MERKLE ROOT
             merkle_root = calculate_merkle_root(coinbase_txid, template["transactions"])
@@ -113,7 +115,7 @@ def main():
 
             # se il mining è stato interrotto da nuovo blocco → ricomincia il ciclo
             if mined_header_hex is None:
-                print("Nuovo blocco minato: riparto con un template aggiornato\n")
+                log.info("Nuovo blocco minato: riparto con un template aggiornato")
                 continue
 
             # STEP 9) SERIALIZZA IL BLOCCO
@@ -121,20 +123,30 @@ def main():
                 mined_header_hex, coinbase_tx, template["transactions"]
             )
             if not serialized_block:
-                print("\033[K\rERRORE: Blocco non serializzato correttamente. Riprovo...", end="\r\n")
+                log.error("Blocco non serializzato correttamente. Riprovo...")
                 continue
 
-            # STEP 10) INVIA IL BLOCCO
+            # STEP 10) CALCOLA L'HASH DEL BLOCCO E INVIALO
+            # Calcola l'hash del blocco dall'header
+            header_bytes = bytes.fromhex(mined_header_hex)
+            block_hash = hashlib.sha256(hashlib.sha256(header_bytes).digest()).digest()[::-1].hex()
+            log.info(f"Hash del blocco trovato: {block_hash}")
+            
+            # Invia il blocco
             rpc_submit = connect_rpc()
             submit_block(rpc_submit, serialized_block)
 
-        except Exception as e:
-            print(f"\033[K\rErrore nel ciclo di mining: {e}", end="\r\n")
+        except Exception:
+            log.exception("Errore nel ciclo di mining")
 
         # Pausa prima di iniziare un nuovo ciclo
-        print("\033[K\rCiclo completato, in attesa del prossimo ciclo...", end="\r\n")
+        log.info("Ciclo completato, in attesa del prossimo ciclo...")
         time.sleep(1)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
     main()

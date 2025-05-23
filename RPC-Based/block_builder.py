@@ -1,9 +1,11 @@
-import struct, hashlib, os
+import struct, hashlib, os, logging
 from binascii import unhexlify, hexlify
 
 # Questo modulo contiene le funzioni necessarie per costruire un blocco Bitcoin completo
 # Ogni funzione gestisce un aspetto specifico della creazione del blocco, dalla transazione coinbase
 # fino alla serializzazione finale del blocco completo
+
+log = logging.getLogger(__name__)
 
 EXTRANONCE1 = "1234567890abcdef"
 EXTRANONCE2 = "abcdabcd"
@@ -273,8 +275,8 @@ def serialize_block(header_hex, coinbase_tx, transactions):
         La struttura completa è quindi:  
         [header][tx_count][coinbase_tx][tx1][tx2]...[txN]
     """
-    print("\n=== Serializzazione del blocco ===")
-    print("\nSerializzando il blocco...")
+    # Messaggio di alto livello → INFO
+    log.info("Serializzazione del blocco avviata")
 
     # Calcola il numero totale di transazioni (coinbase + transazioni normali)
     num_tx = len(transactions) + 1  # +1 per includere la coinbase
@@ -285,17 +287,18 @@ def serialize_block(header_hex, coinbase_tx, transactions):
         # Concatena tutte le transazioni normali in formato esadecimale
         transactions_hex = "".join(tx["data"] for tx in transactions)
     except KeyError as e:
-        # Gestisce l'errore se una transazione non ha il campo 'data' richiesto
-        print(f"Errore: una transazione manca del campo '{e}'")
+        # Errore operativo → ERROR (stack-trace incluso)
+        log.exception("Una transazione manca del campo 'data'")
         return None
 
     # Assembla il blocco completo: header + contatore tx + coinbase + altre tx
     block_hex = header_hex + num_tx_hex + coinbase_tx + transactions_hex
 
-    # Output informativo
-    print("\nBlocco serializzato correttamente!")
-    print(f"Numero transazioni = {num_tx}")
-    print(f"Blocco HEX:\n{block_hex}")
+    # Conferma di successo → INFO
+    log.info("Blocco serializzato correttamente - %d transazioni totali", num_tx)
+
+    # Dettaglio verboso (potenzialmente migliaia di caratteri) → DEBUG
+    log.debug("Blocco HEX: %s", block_hex)
 
     # Restituisce il blocco serializzato
     return block_hex

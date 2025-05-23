@@ -1,8 +1,11 @@
 from bitcoinrpc.authproxy import AuthServiceProxy
 import config
+import logging
 
 # Questo modulo gestisce la comunicazione con il nodo Bitcoin tramite chiamate RPC (Remote Procedure Call)
 # Fornisce funzioni per ottenere dati dalla blockchain, richiedere template di blocchi e inviare blocchi minati
+
+log = logging.getLogger(__name__)
 
 def connect_rpc():
     """
@@ -30,20 +33,21 @@ def test_rpc_connection():
         prima di iniziare il processo di mining. Mostra informazioni come il tipo di rete
         (mainnet, testnet, regtest), l'altezza della blockchain e la difficoltà attuale.
     """
-    print("=== Verifica connessione RPC ===")
+    # Avvio test connessione  → INFO
+    log.info("Verifica connessione RPC")
     try:
         # Crea una connessione RPC
         rpc = connect_rpc()
         # Richiede informazioni generali sulla blockchain
         info = rpc.getblockchaininfo()
         # Mostra le informazioni principali
-        print("\nConnessione riuscita!")
-        print(f"Chain: {info['chain']}")          # Tipo di rete (mainnet, testnet, regtest)
-        print(f"Blocchi: {info['blocks']}")       # Altezza attuale della blockchain
-        print(f"Difficoltà: {info['difficulty']}") # Difficoltà di mining attuale
+        # Esito positivo        → INFO
+        log.info("Connessione RPC riuscita – chain=%s, blocchi=%d, difficoltà=%s",
+                 info['chain'], info['blocks'], info['difficulty'])
+
     except Exception as e:
-        # Gestisce e propaga eventuali errori di connessione
-        print(f"\nErrore di connessione: {e}")
+        # Stack-trace completo  → EXCEPTION
+        log.exception("Errore di connessione RPC")
         raise
 
 def get_best_block_hash(rpc):
@@ -64,10 +68,12 @@ def get_best_block_hash(rpc):
     try:
         # Richiede l'hash del blocco più recente
         best_block_hash = rpc.getbestblockhash()
+        # Valore restituito    → DEBUG (informativo ma non essenziale)
+        log.debug("Best block hash: %s", best_block_hash)
         return best_block_hash
     except Exception as e:
         # Gestisce eventuali errori durante la chiamata RPC
-        print(f"\nErrore nel recupero del best block hash: {e}")
+        log.error("Errore RPC getbestblockhash: %s", e)
         return None
 
 def get_block_template(rpc):
@@ -95,10 +101,13 @@ def get_block_template(rpc):
     """
     try:
         # Richiede il template specificando il supporto per SegWit
-        return rpc.getblocktemplate({"rules": ["segwit"]})
+        tpl = rpc.getblocktemplate({"rules": ["segwit"]})
+        log.debug("Template ricevuto - altezza %d, %d tx",
+                  tpl.get("height"), len(tpl["transactions"]))
+        return tpl
     except Exception as e:
         # Gestisce eventuali errori durante la richiesta
-        print(f"Errore nel recupero del template: {e}")
+        log.error("Errore RPC getblocktemplate: %s", e)
         return None
     
 def ensure_witness_data(rpc, template):
@@ -127,7 +136,7 @@ def ensure_witness_data(rpc, template):
         # getrawmempool(True) restituisce informazioni dettagliate su tutte le transazioni nella mempool
         mempool_info = rpc.getrawmempool(True)
     except Exception as e:
-        print(f"Errore nel recupero della mempool: {e}")
+        log.warning("Impossibile recuperare la mempool dettagliata: %s", e)
         mempool_info = {}
     
     # Elabora ogni transazione nel template
@@ -150,7 +159,7 @@ def ensure_witness_data(rpc, template):
             if raw_tx_full:
                 raw = raw_tx_full  # Usa i dati completi se disponibili
         except Exception as e:
-            print(f"Impossibile recuperare raw witness di {txid}: {e}")
+            log.debug("Raw witness mancante per %s: %s", txid, e)
         
         # Aggiunge la transazione corretta alla lista
         corrected_txs.append({"hash": txid, "data": raw})
@@ -178,12 +187,12 @@ def submit_block(rpc, serialized_block):
         
         Un risultato None indica che il blocco è stato accettato con successo.
     """
-    print("\n=== Invio del blocco al nodo Bitcoin ===")
-    print("\nInviando il blocco al nodo Bitcoin...")
-
+    log.info("Invio del blocco serializzato (%d byte) al nodo",
+             len(serialized_block)//2)
+    
     # Verifica che il blocco sia stato serializzato correttamente
     if not serialized_block:
-        print("Blocco non serializzato correttamente. Annullando l'invio.")
+        log.error("Blocco non serializzato correttamente - invio annullato")
         return
 
     try:
@@ -192,11 +201,10 @@ def submit_block(rpc, serialized_block):
         
         # Verifica il risultato dell'invio
         if result is None:
-            # Un risultato None indica successo
-            print("\nBlocco accettato nella blockchain!")
+            log.info("Blocco accettato nella blockchain")
         else:
-            # Qualsiasi altro risultato indica un errore
-            print(f"\nErrore nell'invio del blocco: {result}")
+            log.error("submitblock ha restituito un errore: %s", result)
+
     except Exception as e:
         # Gestisce eventuali errori durante la chiamata RPC
-        print(f"\nErrore RPC durante submitblock: {e}")
+        log.exception("Errore RPC durante submitblock")
