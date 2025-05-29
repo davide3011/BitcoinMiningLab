@@ -12,8 +12,8 @@ includendo l'algoritmo di hashing SHA-256 e la ricerca del nonce valido.
 log = logging.getLogger(__name__)
 
 # Costanti per ottimizzazione e logging
-BATCH   = 100         # Numero di nonce da provare per iterazione
-LOG_INT = 1_000_000    # Intervallo di tentativi tra un log e l'altro
+BATCH   = 250         # Numero di nonce da provare per iterazione
+LOG_INT = 2_000_000    # Intervallo di tentativi tra un log e l'altro
 RATE_INT = 2           # secondi fra due log dell’hashrate
 
 # ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"
             if digest[::-1] < target_be:
                 total = time.time() - start_t
                 hashrate = (attempts + i + 1) / total if total else 0
-                log.info("Blocco trovato - nonce=%d tentativi=%d tempo=%.2fs hashrate=%.2f kH/s",
+                log.info("Blocco trovato - nonce=%d tentativi=%d tempo=%.2fs hashrate medio=%.2f kH/s",
                          n, attempts + i + 1, total, hashrate/1000)
                 log.info("Hash valido: %s", digest[::-1].hex())
 
@@ -153,23 +153,20 @@ def mine_block(header_hex: str, target_hex: str, nonce_mode: str = "incremental"
 
         # ---- log periodico ----
         now = time.time()
-        # 1) tentativi: LOG_INT rimane utile per avere un “check” ogni X hash
-        if attempts % LOG_INT == 0:
-            tmp = mid.copy(); tmp.update(nonce_view)
-            dbg_hash = double_sha256(tmp.digest())
-            rate = (attempts - last_rate_n) / (now - last_rate_t)
-            log.debug("Stato mining - tentativi=%d nonce=%d hash=%s rate=%.2f kH/s",
-                      attempts, nonce, dbg_hash[::-1].hex(), rate/1000)
 
-        # 2) hashrate istantaneo: log ogni RATE_INT secondi
+        # hashrate istantaneo: log ogni RATE_INT secondi
         if now - last_rate_t >= RATE_INT:
-            rate = (attempts - last_rate_n) / (now - last_rate_t)
-            log.info("Hashrate istantaneo: %.2f kH/s", rate/1000)
+            hashrate = (attempts - last_rate_n) / (now - last_rate_t)
             last_rate_t, last_rate_n = now, attempts
 
             struct.pack_into("<I", header, 76, nonce)
             tmp = mid.copy(); tmp.update(nonce_view)
             dbg_hash = double_sha256(tmp.digest())
 
-            log.debug("Stato mining - tentativi=%d nonce=%d hash=%s rate=%.2f kH/s",
-                      attempts, nonce, dbg_hash[::-1].hex(), rate/1000)
+            log.info("Stato mining - hashrate=%.2f kH/s tentativi=%d nonce=%d hash=%s",
+                hashrate/1000,    # hashrate istantaneo
+                attempts,     # tentativi
+                nonce,        # nonce
+                dbg_hash[::-1].hex()  # hash di controllo
+            )
+

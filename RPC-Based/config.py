@@ -20,7 +20,7 @@ WALLET_ADDRESS = "..."                   # Indirizzo del wallet del miner
 # ---------------------------
 # Parametri Mining
 # ---------------------------
-DIFFICULTY_FACTOR = 100000000            # Fattore per modificare la difficoltà di mining
+DIFFICULTY_FACTOR = 1                    # Fattore per modificare la difficoltà di mining
 NONCE_MODE = "mixed"                     # Modalità di aggiornamento del nonce:
                                          # "incremental"  -> incremento sequenziale
                                          # "random"       -> scelta casuale ad ogni iterazione

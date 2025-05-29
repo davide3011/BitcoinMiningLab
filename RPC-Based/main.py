@@ -11,8 +11,69 @@ from miner import mine_block
 
 log = logging.getLogger(__name__)
 
+# -- parametri per il mining ----------------------------------------------
+EXTRANONCE1 = "1234567890abcdef"
+EXTRANONCE2 = "12341234"
+
 # -- parametro: intervallo (secondi) fra due poll del best-block --------------
 CHECK_INTERVAL = 20
+
+# --------------------------- funzioni di supporto -----------------------------
+def modifica_target(template, rpc_conn):
+    """
+    Modifica il target di mining in base alla rete e al fattore di difficoltà.
+    
+    Args:
+        template (dict): Il template del blocco ottenuto da getblocktemplate
+        rpc_conn: Connessione RPC al nodo Bitcoin
+        
+    Returns:
+        str: Il target modificato in formato esadecimale
+        float: Il valore effettivo di DIFFICULTY_FACTOR utilizzato
+    """
+    log = logging.getLogger(__name__)
+    
+    # Determina la rete e imposta DIFFICULTY_FACTOR appropriato
+    blockchain_info = rpc_conn.getblockchaininfo()
+    network = blockchain_info.get("chain", "")
+    
+    # Imposta DIFFICULTY_FACTOR in base alla rete
+    if network == "regtest":
+        difficulty_factor = float(config.DIFFICULTY_FACTOR)
+        # Su regtest permettiamo anche difficoltà minori di 1 per scopi didattici
+        if difficulty_factor < 0:
+            log.warning("DIFFICULTY_FACTOR deve essere >= 0. Impostazione a 0.1")
+            difficulty_factor = 0.1
+    else:  # testnet o mainnet
+        difficulty_factor = 1.0
+        log.info(f"Rete {network} rilevata: DIFFICULTY_FACTOR impostato a 1.0")
+    
+    # Decodifica il target originale
+    nBits_int = int(template["bits"], 16)
+    original_target = decode_nbits(nBits_int)
+    log.debug(f"Target originale: {original_target}")
+    
+    # Calcola il target modificato
+    if difficulty_factor == 0:
+        # Usa il target originale
+        modified_target = original_target
+        log.info("DIFFICULTY_FACTOR = 0: utilizzo il target originale della rete")
+    else:
+        # Calcola il target in base alla difficoltà
+        max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+        target_value = int(max_target / difficulty_factor)
+        
+        # Limita il target al massimo valore consentito
+        max_possible_target = (1 << 256) - 1
+        if target_value > max_possible_target:
+            target_value = max_possible_target
+            log.warning("Target calcolato troppo grande. Limitato al massimo valore possibile.")
+            
+        modified_target = f"{target_value:064x}"
+        log.info(f"Target modificato (difficoltà {difficulty_factor}): {modified_target}")
+    
+    return modified_target
+
 
 # --------------------------- watchdog thread ---------------------------------
 def watchdog_bestblock(rpc_conn, stop_event: threading.Event):
@@ -34,6 +95,9 @@ def watchdog_bestblock(rpc_conn, stop_event: threading.Event):
 def main():
     # TEST RPC
     test_rpc_connection()
+    
+    # Log dell'extranonce2 utilizzato
+    log.info(f"Extranonce2 utilizzato: {EXTRANONCE2}")
 
     while True:
         try:
@@ -62,29 +126,12 @@ def main():
             miner_info = rpc_template.getaddressinfo(config.WALLET_ADDRESS)
             miner_script_pubkey = miner_info["scriptPubKey"]
             coinbase_tx, coinbase_txid = build_coinbase_transaction(
-                template, miner_script_pubkey, config.COINBASE_MESSAGE
+                template, miner_script_pubkey, EXTRANONCE1, EXTRANONCE2, config.COINBASE_MESSAGE
             )
             log.info(f"Messaggio nella coinbase: {config.COINBASE_MESSAGE}")
 
             # STEP 5) MODIFICA TARGET
-            blockchain_info = rpc_template.getblockchaininfo()
-            network = blockchain_info.get("chain", "")
-
-            if network == "regtest":
-                DIFFICULTY_FACTOR = float(config.DIFFICULTY_FACTOR)
-                if DIFFICULTY_FACTOR < 1:
-                    log.warning("DIFFICULTY_FACTOR deve essere >= 1. Impostazione a 1.0")
-                    DIFFICULTY_FACTOR = 1.0
-            else:  # testnet o mainnet
-                DIFFICULTY_FACTOR = 1.0
-                log.info(f"Rete {network} rilevata: DIFFICULTY_FACTOR impostato a 1.0")
-
-            nBits_int = int(template["bits"], 16)
-            original_target = decode_nbits(nBits_int)
-            modified_target_int = int(original_target, 16) // int(DIFFICULTY_FACTOR)
-            modified_target = f"{modified_target_int:064x}"
-            log.debug(f"Target originale: {original_target}")
-            log.info(f"Target modificato ({DIFFICULTY_FACTOR}x più difficile): {modified_target}")
+            modified_target = modifica_target(template, rpc_template)
 
             # STEP 6) CALCOLA MERKLE ROOT
             merkle_root = calculate_merkle_root(coinbase_txid, template["transactions"])
@@ -103,7 +150,7 @@ def main():
             )
             t_watch.start()
 
-            # STEP 8) MINING (cancellabile)
+            # STEP 8) MINING
             nonce_mode = config.NONCE_MODE
             mined_header_hex, nonce, hashrate = mine_block(
                 header_hex, modified_target, nonce_mode, stop_event

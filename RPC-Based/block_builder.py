@@ -7,9 +7,6 @@ from binascii import unhexlify, hexlify
 
 log = logging.getLogger(__name__)
 
-EXTRANONCE1 = "1234567890abcdef"
-EXTRANONCE2 = "abcdabcd"
-
 def double_sha256(data):
     """ 
     Esegue il doppio SHA-256 su un dato, una funzione di hash fondamentale in Bitcoin.
@@ -129,7 +126,7 @@ def is_segwit_tx(raw_hex: str) -> bool:
     """
     return len(raw_hex) >= 12 and raw_hex[8:12] == "0001"
 
-def build_coinbase_transaction(template, miner_script_pubkey, coinbase_message=None):
+def build_coinbase_transaction(template, miner_script_pubkey, extranonce1, extranonce2, coinbase_message=None):
     height  = template["height"]
     reward  = template["coinbasevalue"]
     wc_raw  = template.get("default_witness_commitment")          # può essere script o sola radice
@@ -148,7 +145,7 @@ def build_coinbase_transaction(template, miner_script_pubkey, coinbase_message=N
         m = coinbase_message.encode()
         script_sig += "6a" + f"{len(m):02x}" + m.hex()
     # Aggiunge extranonce1 e extranonce2 come richiesto dal protocollo Stratum V1
-    script_sig += EXTRANONCE1 + EXTRANONCE2
+    script_sig += extranonce1 + extranonce2
 
     if len(script_sig)//2 > 100:
         raise ValueError("scriptSig > 100 byte")
