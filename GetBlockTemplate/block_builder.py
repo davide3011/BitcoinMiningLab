@@ -1,86 +1,8 @@
-import struct, hashlib, os, logging
+import struct, logging
 from binascii import unhexlify, hexlify
-
-# Questo modulo contiene le funzioni necessarie per costruire un blocco Bitcoin completo
-# Ogni funzione gestisce un aspetto specifico della creazione del blocco, dalla transazione coinbase
-# fino alla serializzazione finale del blocco completo
+from utils import double_sha256, encode_varint
 
 log = logging.getLogger(__name__)
-
-def double_sha256(data):
-    """ 
-    Esegue il doppio SHA-256 su un dato, una funzione di hash fondamentale in Bitcoin.
-    
-    Args:
-        data: I dati in formato bytes su cui calcolare l'hash
-        
-    Returns:
-        bytes: Il risultato del doppio hash SHA-256 (prima si applica SHA-256, poi si applica 
-               nuovamente SHA-256 sul risultato)
-    
-    Note:
-        Questa funzione è utilizzata in molti contesti in Bitcoin, come il calcolo 
-        dell'hash del blocco, l'hash delle transazioni e il calcolo del merkle root.
-    """
-    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
-
-def decode_nbits(nBits: int) -> str:
-    """ 
-    Decodifica il campo nBits (difficoltà compatta) in un target a 256-bit in formato esadecimale.
-    
-    Args:
-        nBits: Valore intero che rappresenta la difficoltà in formato compatto
-        
-    Returns:
-        str: Il target di difficoltà in formato esadecimale a 64 caratteri (256 bit)
-    
-    Note:
-        In Bitcoin, la difficoltà è codificata nel campo 'bits' dell'header del blocco.
-        Il formato è compatto: i primi 8 bit rappresentano l'esponente, i restanti 24 bit 
-        rappresentano la mantissa (significand). Questa funzione converte questo formato 
-        compatto nel target effettivo che l'hash del blocco deve essere inferiore per 
-        essere considerato valido.
-    """
-    # Estrae l'esponente (primi 8 bit)
-    exponent = (nBits >> 24) & 0xff
-    # Estrae la mantissa (ultimi 24 bit)
-    significand = nBits & 0x007fffff
-    # Calcola il target effettivo: mantissa * 2^(8*(esponente-3))
-    return f"{(significand << (8 * (exponent - 3))):064x}"
-
-def encode_varint(value):
-    """
-    Codifica un numero come VarInt (CompactSize Unsigned Integer) secondo il protocollo Bitcoin.
-    
-    Args:
-        value: Il valore intero da codificare come VarInt
-        
-    Returns:
-        str: La rappresentazione esadecimale del VarInt
-        
-    Raises:
-        ValueError: Se il valore supera il limite massimo per VarInt (2^64-1)
-    
-    Note:
-        Il formato VarInt in Bitcoin è utilizzato per codificare numeri di lunghezza variabile:
-        - Per valori < 0xfd (253): usa 1 byte per il valore stesso
-        - Per valori <= 0xffff: usa 0xfd (1 byte) seguito dal valore su 2 byte
-        - Per valori <= 0xffffffff: usa 0xfe (1 byte) seguito dal valore su 4 byte
-        - Per valori <= 0xffffffffffffffff: usa 0xff (1 byte) seguito dal valore su 8 byte
-        Questo permette di risparmiare spazio quando si codificano numeri piccoli.
-    """
-    # Definisce le soglie e i prefissi per i diversi formati di VarInt
-    thresholds = [(0xfd, ""), (0xffff, "fd"), (0xffffffff, "fe"), (0xffffffffffffffff, "ff")]
-    
-    # Seleziona il formato appropriato in base al valore
-    for threshold, prefix in thresholds:
-        if value <= threshold:
-            # Calcola il numero di byte necessari e codifica il valore in little-endian
-            byte_length = max(1, (threshold.bit_length() + 7) // 8)
-            return prefix + value.to_bytes(byte_length, 'little').hex()
-            
-    # Se il valore è troppo grande, solleva un'eccezione
-    raise ValueError("Il valore supera il limite massimo per VarInt (2^64-1)")
 
 def tx_encode_coinbase_height(height: int) -> str:
     """
@@ -127,6 +49,7 @@ def is_segwit_tx(raw_hex: str) -> bool:
     return len(raw_hex) >= 12 and raw_hex[8:12] == "0001"
 
 def build_coinbase_transaction(template, miner_script_pubkey, extranonce1, extranonce2, coinbase_message=None):
+    """Costruisce una transazione coinbase per il mining."""
     height  = template["height"]
     reward  = template["coinbasevalue"]
     wc_raw  = template.get("default_witness_commitment")          # può essere script o sola radice
@@ -198,6 +121,7 @@ def build_coinbase_transaction(template, miner_script_pubkey, extranonce1, extra
     return coinbase_hex, txid
 
 def calculate_merkle_root(coinbase_txid: str, transactions: list[dict]) -> str:
+    """Calcola la radice dell'albero di Merkle per una lista di ID di transazioni."""
     # foglie in formato bytes-LE
     tx_hashes = [unhexlify(coinbase_txid)[::-1]] + [
         unhexlify(tx["hash"])[::-1] for tx in transactions

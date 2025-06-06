@@ -1,41 +1,14 @@
 import struct, random, time, hashlib, logging
 from threading import Event
 from binascii import hexlify, unhexlify
+from utils import double_sha256
 import config
-
-"""
-Modulo di mining per il processo di proof-of-work di Bitcoin.
-Implementa le funzioni necessarie per eseguire il mining di blocchi Bitcoin,
-includendo l'algoritmo di hashing SHA-256 e la ricerca del nonce valido.
-"""
 
 log = logging.getLogger(__name__)
 
 # Costanti per ottimizzazione e logging
-BATCH   = 250         # Numero di nonce da provare per iterazione
-LOG_INT = 2_000_000    # Intervallo di tentativi tra un log e l'altro
-RATE_INT = 2           # secondi fra due log dell’hashrate
-
-# ---------------------------------------------------------------------------
-# utility
-# ---------------------------------------------------------------------------
-
-def double_sha256(data: bytes) -> bytes:
-    """
-    Esegue il doppio SHA-256 su un dato.
-    
-    Args:
-        data: I dati in formato bytes su cui calcolare l'hash
-        
-    Returns:
-        bytes: Il risultato del doppio hash SHA-256 (prima si applica SHA-256, poi si applica 
-               nuovamente SHA-256 sul risultato)
-    
-    Note:
-        Questa funzione è utilizzata in molti contesti in Bitcoin, come il calcolo 
-        dell'hash del blocco, l'hash delle transazioni e il calcolo del merkle root.
-    """
-    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
+BATCH = 250
+RATE_INT = 2
 
 def _midstate(prefix: bytes) -> "hashlib._Hash":
     """

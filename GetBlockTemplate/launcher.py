@@ -8,24 +8,20 @@ import os
 import re
 import sys
 import time
-from typing import List
 
-# ---------------------------------------------------------------------------
-# SEZIONE CONFIGURABILE
-# ---------------------------------------------------------------------------
+# Configurazione pattern
 PATTERNS = {
-    # Stato periodico del miner – hashrate istantaneo & tentativi cumulativi
-    # Esempio: "Stato mining - hashrate=452.53 kH/s tentativi=905300 ..."
+    # Stato periodico del miner
     "status": re.compile(
         r"Stato mining - hashrate=([0-9.]+) kH/s tentativi=(\d+)"
     ),
 
-    # Blocco trovato con dettagli (opzionale)
+    # Blocco trovato (con dettagli)
     "found_stats": re.compile(
         r"Blocco trovato - nonce=\d+ tentativi=(\d+) tempo=([0-9.]+)s hashrate=([0-9.]+) kH/s"
     ),
 
-    # Blocco trovato senza dettagli (fallback)
+    # Blocco trovato (semplice)
     "found_simple": re.compile(r"Blocco trovato"),
 
     # Hash del blocco
@@ -35,17 +31,16 @@ PATTERNS = {
     "submit": re.compile(r"Blocco accettato nella blockchain|submitblock ha restituito un errore"),
 }
 
-# ---------------------------------------------------------------------------
-# PROCESSO WORKER
-# ---------------------------------------------------------------------------
+# Processo worker
 
 def _extranonce2(base: str, idx: int) -> str:
     """Restituisce `base + idx` in esadecimale, mantenendo la stessa larghezza."""
     return f"{int(base, 16) + idx:0{len(base)}x}"
 
 def _worker(idx: int, base_ex2: str, q: mp.Queue):
-    """Avvia un processo di mining e inoltra eventi strutturati al supervisore."""
-    try:  # pin CPU (best‑effort)
+    """Avvia un processo di mining."""
+    # Pin CPU (best-effort)
+    try:
         os.sched_setaffinity(0, {idx})
     except (AttributeError, OSError):
         pass
@@ -55,17 +50,17 @@ def _worker(idx: int, base_ex2: str, q: mp.Queue):
     main.EXTRANONCE2 = _extranonce2(base_ex2, idx)
 
     class _QueueHandler(logging.Handler):
-        """Invia LogRecord significativi al processo padre via coda."""
-        def emit(self, record: logging.LogRecord) -> None:  # noqa: D401
+        """Invia LogRecord al processo padre via coda."""
+        def emit(self, record: logging.LogRecord) -> None:
             msg = self.format(record)
 
-            # --------------- metriche periodiche -----------------
+            # Metriche periodiche
             if m := PATTERNS["status"].search(msg):
                 rate = float(m.group(1))
                 attempts = int(m.group(2))
                 q.put(("status", idx, {"rate": rate, "attempts": attempts}))
                 return
-            # --------------- blocco trovato ----------------------
+            # Blocco trovato
             if m := PATTERNS["found_stats"].search(msg):
                 attempts = int(m.group(1))
                 t_sec = float(m.group(2))
@@ -75,14 +70,14 @@ def _worker(idx: int, base_ex2: str, q: mp.Queue):
             if PATTERNS["found_simple"].search(msg):
                 q.put(("found", idx, None))
                 return
-            # --------------- hash / submit -----------------------
+            # Hash/submit
             if m := PATTERNS["hash"].search(msg):
                 q.put(("hash", idx, m.group(1)))
                 return
             if PATTERNS["submit"].search(msg):
                 q.put(("submit", idx, None))
                 return
-            # tutti gli altri record vengono ignorati (niente log per‑worker)
+            # Altri record ignorati
 
     _fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     h = _QueueHandler(); h.setFormatter(_fmt)
@@ -93,9 +88,7 @@ def _worker(idx: int, base_ex2: str, q: mp.Queue):
     except KeyboardInterrupt:
         pass
 
-# ---------------------------------------------------------------------------
-# SUPERVISORE
-# ---------------------------------------------------------------------------
+# Supervisore
 
 def _aggregate(q: mp.Queue, n: int) -> str:
     """Aggrega metriche da tutti i worker e riavvia dopo il submit."""
@@ -166,9 +159,7 @@ def _aggregate(q: mp.Queue, n: int) -> str:
             sys.stdout.flush()
             last_print = now
 
-# ---------------------------------------------------------------------------
-# CICLO DI AVVIO / RIAVVIO
-# ---------------------------------------------------------------------------
+# Ciclo avvio/riavvio
 
 def launch(n: int, base_ex2: str) -> None:
     # Visualizza l'extranonce2 che ogni processo utilizzerà nella coinbase (solo in debug)
@@ -198,9 +189,7 @@ def launch(n: int, base_ex2: str) -> None:
         print("\nRiavvio dei worker…\n")
         time.sleep(1)
 
-# ---------------------------------------------------------------------------
-# ENTRY‑POINT CLI
-# ---------------------------------------------------------------------------
+# Entry-point CLI
 def _parse_args():
     # Importa l'EXTRANONCE2 da main.py come valore predefinito
     import main
@@ -220,90 +209,41 @@ if __name__ == "__main__":
     log = logging.getLogger(__name__)
     log.info("Launcher avviato. Parametri e configurazione caricati correttamente.")
     
-    # Importa i moduli necessari
     from rpc import connect_rpc, test_rpc_connection, get_block_template
-    from block_builder import is_segwit_tx, decode_nbits
+    from block_builder import is_segwit_tx
+    from utils import calculate_target
     import config
     
-    # Inizializza multiprocessing
     mp.set_start_method("spawn", force=True)
     args = _parse_args()
     
-    # Testa la connessione RPC
     test_rpc_connection()
     
-    # Ottieni una connessione RPC e il template del blocco
     rpc_conn = connect_rpc()
     template = get_block_template(rpc_conn)
     
     if template:
-        # Mostra informazioni sulle transazioni
         tot_tx = len(template["transactions"])
         witness_tx = sum(1 for tx in template["transactions"] if is_segwit_tx(tx["data"]))
         legacy_tx = tot_tx - witness_tx
         log.info(f"Transazioni nel template: totali = {tot_tx}  |  legacy = {legacy_tx}  |  segwit = {witness_tx}")
-        
-        # Mostra il messaggio nella coinbase
         log.info(f"Messaggio nella coinbase: {config.COINBASE_MESSAGE}")
         
-        # Calcola e mostra il target modificato
         blockchain_info = rpc_conn.getblockchaininfo()
         network = blockchain_info.get("chain", "")
         difficulty_factor = float(config.DIFFICULTY_FACTOR)
         
-        if network == "regtest":
-            if difficulty_factor < 0:
-                log.warning("DIFFICULTY_FACTOR deve essere >= 0. Impostazione a 0.1")
-                difficulty_factor = 0.1
-        else:  # testnet o mainnet
+        if network != "regtest":
             difficulty_factor = 1.0
             log.info(f"Rete {network} rilevata: DIFFICULTY_FACTOR impostato a 1.0")
+        elif difficulty_factor < 0:
+            log.warning("DIFFICULTY_FACTOR deve essere >= 0. Impostazione a 0.1")
+            difficulty_factor = 0.1
         
-        nBits_int = int(template["bits"], 16)
-        original_target = decode_nbits(nBits_int)
-        
-        if difficulty_factor == 0:
-            modified_target = original_target
-            log.info("DIFFICULTY_FACTOR = 0: utilizzo il target originale della rete")
-        else:
-            max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
-            target_value = int(max_target / difficulty_factor)
-            max_possible_target = (1 << 256) - 1
-            if target_value > max_possible_target:
-                target_value = max_possible_target
-                log.warning("Target calcolato troppo grande. Limitato al massimo valore possibile.")
-            modified_target = f"{target_value:064x}"
-            log.info(f"Target modificato (difficoltà {difficulty_factor}): {modified_target}")
+        modified_target = calculate_target(template, difficulty_factor, network)
+        log.info(f"Target modificato (difficoltà {difficulty_factor}): {modified_target}")
     
-    # Mostra la modalità di mining
     log.info(f"Avvio mining - modalità {config.NONCE_MODE}")
     
-    # Avvia il mining multiprocesso
     print(f"\nAvvio mining con {args.num_procs} processi (base extranonce2={args.base_extranonce2})\n")
-    launch(args.num_procs, args.base_extranonce2)
-    mp.set_start_method("spawn", force=True)
-    args = _parse_args()
-    print(f"\nAvvio mining con {args.num_procs} processi (base extranonce2={args.base_extranonce2})\n")
-
-    # --- LOG aggiuntivi come richiesto ---
-    try:
-        import config
-        import main
-        log = logging.getLogger(__name__)
-        # Simula ottenimento template e coinbase come in main.py
-        template = getattr(main, "TEMPLATE", None)
-        modified_target = getattr(main, "MODIFIED_TARGET", None)
-        coinbase_message = getattr(config, "COINBASE_MESSAGE", None)
-        if template and isinstance(template, dict) and "transactions" in template:
-            tot_tx = len(template["transactions"])
-            witness_tx = sum(1 for tx in template["transactions"] if tx.get("data", b"")[:2] == "00")
-            legacy_tx = tot_tx - witness_tx
-            log.info(f"Transazioni nel template: totali = {tot_tx}  |  legacy = {legacy_tx}  |  segwit = {witness_tx}")
-        if coinbase_message:
-            log.info(f"Messaggio nella coinbase: {coinbase_message}")
-        if modified_target:
-            log.info(f"Target modificato: {modified_target}")
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"Impossibile stampare log aggiuntivi: {e}")
-
     launch(args.num_procs, args.base_extranonce2)

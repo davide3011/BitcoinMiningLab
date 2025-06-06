@@ -4,78 +4,39 @@ from rpc import (
     submit_block, get_best_block_hash 
 )
 from block_builder import (
-    decode_nbits, calculate_merkle_root, build_block_header, is_segwit_tx,
+    calculate_merkle_root, build_block_header, is_segwit_tx,
     serialize_block, build_coinbase_transaction
 )
 from miner import mine_block
+from utils import calculate_target
 
 log = logging.getLogger(__name__)
 
-# -- parametri per il mining ----------------------------------------------
+# Parametri mining
 EXTRANONCE1 = "1234567890abcdef"
 EXTRANONCE2 = "12341234"
 
-# -- parametro: intervallo (secondi) fra due poll del best-block --------------
+# Intervallo controllo best-block
 CHECK_INTERVAL = 20
 
-# --------------------------- funzioni di supporto -----------------------------
+# Funzioni di supporto
 def modifica_target(template, rpc_conn):
-    """
-    Modifica il target di mining in base alla rete e al fattore di difficoltà.
-    
-    Args:
-        template (dict): Il template del blocco ottenuto da getblocktemplate
-        rpc_conn: Connessione RPC al nodo Bitcoin
-        
-    Returns:
-        str: Il target modificato in formato esadecimale
-        float: Il valore effettivo di DIFFICULTY_FACTOR utilizzato
-    """
-    log = logging.getLogger(__name__)
-    
-    # Determina la rete e imposta DIFFICULTY_FACTOR appropriato
+    """Modifica il target di mining in base alla rete e al fattore di difficoltà."""
     blockchain_info = rpc_conn.getblockchaininfo()
     network = blockchain_info.get("chain", "")
+    difficulty_factor = float(config.DIFFICULTY_FACTOR)
     
-    # Imposta DIFFICULTY_FACTOR in base alla rete
-    if network == "regtest":
-        difficulty_factor = float(config.DIFFICULTY_FACTOR)
-        # Su regtest permettiamo anche difficoltà minori di 1 per scopi didattici
-        if difficulty_factor < 0:
-            log.warning("DIFFICULTY_FACTOR deve essere >= 0. Impostazione a 0.1")
-            difficulty_factor = 0.1
-    else:  # testnet o mainnet
+    if network != "regtest":
         difficulty_factor = 1.0
         log.info(f"Rete {network} rilevata: DIFFICULTY_FACTOR impostato a 1.0")
+    elif difficulty_factor < 0:
+        log.warning("DIFFICULTY_FACTOR deve essere >= 0. Impostazione a 0.1")
+        difficulty_factor = 0.1
     
-    # Decodifica il target originale
-    nBits_int = int(template["bits"], 16)
-    original_target = decode_nbits(nBits_int)
-    log.debug(f"Target originale: {original_target}")
-    
-    # Calcola il target modificato
-    if difficulty_factor == 0:
-        # Usa il target originale
-        modified_target = original_target
-        log.info("DIFFICULTY_FACTOR = 0: utilizzo il target originale della rete")
-    else:
-        # Calcola il target in base alla difficoltà
-        max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
-        target_value = int(max_target / difficulty_factor)
-        
-        # Limita il target al massimo valore consentito
-        max_possible_target = (1 << 256) - 1
-        if target_value > max_possible_target:
-            target_value = max_possible_target
-            log.warning("Target calcolato troppo grande. Limitato al massimo valore possibile.")
-            
-        modified_target = f"{target_value:064x}"
-        log.info(f"Target modificato (difficoltà {difficulty_factor}): {modified_target}")
-    
-    return modified_target
+    return calculate_target(template, difficulty_factor, network)
 
 
-# --------------------------- watchdog thread ---------------------------------
+# Watchdog thread
 def watchdog_bestblock(rpc_conn, stop_event: threading.Event):
     """
     Chiama getbestblockhash() ogni CHECK_INTERVAL.
@@ -156,7 +117,7 @@ def main():
                 header_hex, modified_target, nonce_mode, stop_event
             )
 
-            # ---------- chiusura watchdog ----------
+            # Chiudi watchdog
             stop_event.set()
             t_watch.join(timeout=0.2)
 

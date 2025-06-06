@@ -1,6 +1,17 @@
-# Bitcoin Mining (RPC-Based)
+# Nitcoin Mining (GetBlockTemplate)
 
-Questo progetto implementa un miner di Bitcoin che interagisce con un nodo Bitcoin Core tramite chiamate RPC (Remote Procedure Call). È progettato per scopi didattici, per illustrare i concetti fondamentali del mining di Bitcoin e il processo di costruzione e validazione dei blocchi.
+Questo progetto implementa un sistema completo di mining Bitcoin educativo che utilizza il protocollo **GetBlockTemplate** per interagire con un nodo Bitcoin Core tramite chiamate RPC (Remote Procedure Call). Il programma è progettato specificamente per scopi didattici e di apprendimento, offrendo una comprensione approfondita dei meccanismi interni del mining di Bitcoin, dalla costruzione dei blocchi al processo di Proof-of-Work.
+
+## Caratteristiche Principali
+
+- **Implementazione completa del protocollo Stratum v1** per la comunicazione mining
+- **Supporto multi-processo** per il mining parallelo
+- **Gestione avanzata delle transazioni SegWit** e legacy
+- **Costruzione dinamica della transazione coinbase** con extranonce personalizzabili
+- **Calcolo ottimizzato del Merkle Root** per blocchi con molte transazioni
+- **Sistema di watchdog** per il rilevamento di nuovi blocchi sulla rete
+- **Configurazione flessibile della difficoltà** per ambienti di test
+- **Logging dettagliato** e metriche di performance in tempo reale
 
 ## Funzionamento Teorico del Mining di Bitcoin
 
@@ -21,13 +32,27 @@ Il processo di mining coinvolge i seguenti passaggi chiave:
 4.  **Validazione e Propagazione del Blocco**: Una volta che un miner trova un nonce valido, trasmette il blocco alla rete Bitcoin. Gli altri nodi verificano la validità del blocco (correttezza delle transazioni, validità del PoW, ecc.). Se il blocco è valido, viene aggiunto alla loro copia della blockchain e il miner riceve la ricompensa.
 5.  **Aggiustamento della Difficoltà**: La difficoltà di mining viene aggiustata circa ogni 2016 blocchi (circa due settimane) per garantire che, in media, venga trovato un nuovo blocco ogni 10 minuti, indipendentemente dalla potenza di calcolo totale della rete.
 
-## Funzionamento del Programma
+## Architettura del Sistema
 
-Questo programma simula il processo di mining descritto sopra, interagendo con un nodo Bitcoin Core locale (tipicamente in modalità `regtest` o `testnet` per scopi di sviluppo e test).
+Questo sistema di mining educativo è strutturato in modo modulare per facilitare la comprensione dei diversi aspetti del mining Bitcoin. Il programma simula un ambiente di mining reale, interagendo con un nodo Bitcoin Core locale (tipicamente in modalità `regtest` o `testnet` per scopi di sviluppo e test).
 
-L'esecuzione del programma è gestita dallo script `launcher.py`, che coordina più processi worker per parallelizzare la ricerca del nonce.
+### Struttura Modulare
 
-Ecco una descrizione dei principali componenti e del flusso di lavoro:
+Il progetto è organizzato in moduli specializzati, ognuno responsabile di un aspetto specifico del processo di mining:
+
+- **`launcher.py`**: Orchestratore principale e gestore multi-processo
+- **`main.py`**: Logica core del mining per singolo worker
+- **`miner.py`**: Implementazione dell'algoritmo Proof-of-Work
+- **`block_builder.py`**: Costruzione e serializzazione dei blocchi Bitcoin
+- **`rpc.py`**: Interfaccia di comunicazione con Bitcoin Core
+- **`utils.py`**: Funzioni crittografiche e di utilità
+- **`config.py`**: Configurazione centralizzata del sistema
+
+### Flusso di Esecuzione
+
+L'esecuzione del programma segue un pattern coordinato che rispecchia il funzionamento di un mining pool reale:
+
+Ecco una descrizione dettagliata dei principali componenti e del flusso di lavoro:
 
 1.  **`launcher.py` (Punto di Ingresso e Supervisore)**:
     *   È lo script principale da eseguire per avviare il miner.
@@ -75,10 +100,7 @@ Ecco una descrizione dei principali componenti e del flusso di lavoro:
     *   **Restituzione**: Se viene trovato un nonce valido, restituisce l'header completo del blocco (con il nonce vincente), il nonce stesso e l'hashrate medio.
 
 4.  **`block_builder.py` (Costruzione dei Blocchi)**:
-    *   Fornisce funzioni di utilità per costruire le varie parti di un blocco Bitcoin:
-        *   `double_sha256`: Calcola il doppio hash SHA-256.
-        *   `decode_nbits`: Converte il campo `bits` (difficoltà compatta) nel target di difficoltà a 256 bit.
-        *   `encode_varint`: Codifica numeri interi nel formato VarInt di Bitcoin.
+    *   Fornisce funzioni specializzate per costruire le varie parti di un blocco Bitcoin:
         *   `tx_encode_coinbase_height`: Codifica l'altezza del blocco per la transazione coinbase (BIP34).
         *   `is_segwit_tx`: Verifica se una transazione è in formato SegWit.
         *   `build_coinbase_transaction`: Costruisce la transazione coinbase completa.
@@ -86,7 +108,14 @@ Ecco una descrizione dei principali componenti e del flusso di lavoro:
         *   `build_block_header`: Assembla l'header del blocco.
         *   `serialize_block`: Serializza l'intero blocco (header + transazioni) nel formato di rete.
 
-5.  **`rpc.py` (Interazione con Bitcoin Core)**:
+5.  **`utils.py` (Funzioni di Utilità Comuni)**:
+    *   Modulo centralizzato contenente funzioni di utilità condivise tra i vari componenti:
+        *   `double_sha256`: Calcola il doppio hash SHA-256.
+        *   `encode_varint` / `decode_varint`: Codifica/decodifica numeri interi nel formato VarInt di Bitcoin.
+        *   `decode_nbits`: Converte il campo `bits` (difficoltà compatta) nel target di difficoltà a 256 bit.
+        *   `calculate_target`: Calcola e modifica il target di difficoltà in base alla rete e al fattore configurato.
+
+6.  **`rpc.py` (Interazione con Bitcoin Core)**:
     *   Contiene funzioni per interagire con il nodo Bitcoin Core tramite RPC:
         *   `connect_rpc`: Stabilisce la connessione.
         *   `test_rpc_connection`: Verifica la connessione.
@@ -95,7 +124,7 @@ Ecco una descrizione dei principali componenti e del flusso di lavoro:
         *   `ensure_witness_data`: Assicura che i dati witness siano presenti per le transazioni SegWit.
         *   `submit_block`: Invia un blocco minato al nodo.
 
-6.  **`config.py` (Configurazione)**:
+7.  **`config.py` (Configurazione)**:
     *   Contiene i parametri di configurazione del miner:
         *   Credenziali RPC (`RPC_USER`, `RPC_PASSWORD`, `RPC_HOST`, `RPC_PORT`).
         *   Indirizzo del wallet del miner (`WALLET_ADDRESS`) a cui inviare la ricompensa.
@@ -174,8 +203,45 @@ Ecco una descrizione dei principali componenti e del flusso di lavoro:
 5.  **Interruzione**:
     *   Per fermare il miner, puoi premere `Ctrl+C` nel terminale dove `launcher.py` è in esecuzione.
 
+## Aspetti Didattici e Educativi
+
+### Cosa Imparerai
+
+Questo progetto offre un'esperienza pratica completa sui seguenti concetti fondamentali:
+
+1. **Protocollo GetBlockTemplate**: Comprensione del protocollo standard utilizzato dai mining pool per distribuire il lavoro ai miner
+2. **Costruzione dei Blocchi Bitcoin**: Processo step-by-step di assemblaggio di un blocco valido
+3. **Transazioni Coinbase**: Creazione e gestione della transazione speciale che assegna la ricompensa del mining
+4. **Merkle Tree**: Implementazione pratica dell'algoritmo per il calcolo del Merkle Root
+5. **Proof-of-Work**: Algoritmo di consenso e ricerca del nonce valido
+6. **Gestione SegWit**: Supporto per transazioni Segregated Witness
+7. **Mining Parallelo**: Coordinamento di processi multipli per ottimizzare la ricerca
+8. **Comunicazione RPC**: Interazione diretta con un nodo Bitcoin Core
+
+### Esperimenti Didattici Suggeriti
+
+1. **Modifica della Difficoltà**: Sperimenta con diversi valori di `DIFFICULTY_FACTOR` per osservare l'impatto sui tempi di mining
+2. **Analisi delle Performance**: Confronta l'hashrate con diversi numeri di processi worker
+3. **Studio delle Transazioni**: Esamina come diverse tipologie di transazioni influenzano la costruzione del blocco
+4. **Ottimizzazioni**: Modifica l'algoritmo di ricerca del nonce per testare diverse strategie
+5. **Monitoraggio della Rete**: Osserva come il sistema reagisce ai nuovi blocchi trovati da altri miner
+
+### Strumenti di Debug e Analisi
+
+Il programma include diversi strumenti per facilitare l'apprendimento:
+
+- **Logging Dettagliato**: Ogni fase del processo è documentata nei log
+- **Metriche in Tempo Reale**: Hashrate, tentativi, e statistiche di performance
+- **Serializzazione dei Blocchi**: Possibilità di esaminare la struttura binaria dei blocchi
+- **Validazione Step-by-Step**: Verifica di ogni componente prima dell'assemblaggio finale
+
 ### Note Importanti per l'Uso
 
-*   **Regtest/Testnet**: È fortemente consigliato utilizzare questo miner su reti di test come `regtest` (modalità di regression testing locale) o `testnet`. Minare sulla `mainnet` (la rete Bitcoin principale) con questo software è altamente improbabile che porti a trovare blocchi validi a causa dell'enorme difficoltà e della potenza di calcolo richiesta, dominata da hardware specializzato (ASIC).
+*   **Ambiente di Test**: È fortemente consigliato utilizzare questo miner su reti di test come `regtest` (modalità di regression testing locale) o `testnet`. Minare sulla `mainnet` (la rete Bitcoin principale) con questo software è altamente improbabile che porti a trovare blocchi validi a causa dell'enorme difficoltà e della potenza di calcolo richiesta, dominata da hardware specializzato (ASIC).
 *   **Configurazione del Nodo Bitcoin Core**: Assicurati che il tuo nodo Bitcoin Core sia configurato per accettare connessioni RPC (tipicamente impostando `server=1`, `rpcuser`, `rpcpassword` nel file `bitcoin.conf`). Per `regtest`, potresti dover generare blocchi iniziali manualmente per attivare la catena (`bitcoin-cli -regtest generate 101`).
-*   **Scopo Didattico**: Questo progetto è inteso principalmente per comprendere i meccanismi interni del mining di Bitcoin. Non è ottimizzato per il mining competitivo.
+*   **Scopo Educativo**: Questo progetto è inteso principalmente per comprendere i meccanismi interni del mining di Bitcoin. Non è ottimizzato per il mining competitivo ma per l'apprendimento e la sperimentazione.
+*   **Sicurezza**: Utilizza sempre credenziali RPC sicure e non esporre mai il nodo Bitcoin Core su reti pubbliche durante i test.
+
+## Licenza
+
+Questo progetto è distribuito con la licenza MIT. Consulta il file `LICENSE` per maggiori dettagli.
