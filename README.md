@@ -12,7 +12,7 @@ Questo repository è dedicato allo sviluppo, allo studio e all'implementazione p
 
 ## Struttura del Repository
 
-- **RPC-Based**: Contiene il programma completo che interagisce con il nodo Bitcoin tramite RPC:
+- **GetBlockTemplate**: Contiene un programma completo che interagisce con il nodo Bitcoin tramite RPC:
 
    - Richiesta del block template (getblocktemplate).
 
