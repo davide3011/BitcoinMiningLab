@@ -1,4 +1,4 @@
-# Nitcoin Mining (GetBlockTemplate)
+# Bitcoin Mining (GetBlockTemplate)
 
 Questo progetto implementa un sistema completo di mining Bitcoin educativo che utilizza il protocollo **GetBlockTemplate** per interagire con un nodo Bitcoin Core tramite chiamate RPC (Remote Procedure Call). Il programma è progettato specificamente per scopi didattici e di apprendimento, offrendo una comprensione approfondita dei meccanismi interni del mining di Bitcoin, dalla costruzione dei blocchi al processo di Proof-of-Work.
 
