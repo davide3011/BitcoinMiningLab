@@ -1,7 +1,7 @@
 import time, threading, config, hashlib, logging
 from rpc import (
-    connect_rpc, test_rpc_connection, get_block_template, ensure_witness_data,
-    submit_block, get_best_block_hash 
+    connect_rpc, test_rpc_connection, get_block_template,
+    submit_block, get_best_block_hash
 )
 from block_builder import (
     calculate_merkle_root, build_block_header, is_segwit_tx,
@@ -75,8 +75,6 @@ def main():
                 continue
 
             # STEP 3) Assicurarsi di avere transazioni con dati completi
-            ensure_witness_data(rpc_template, template)
-
             tot_tx       = len(template["transactions"])
             witness_tx   = sum(1 for tx in template["transactions"] if is_segwit_tx(tx["data"]))
             legacy_tx    = tot_tx - witness_tx

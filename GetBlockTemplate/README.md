@@ -67,7 +67,6 @@ Ecco una descrizione dettagliata dei principali componenti e del flusso di lavor
     *   Questo script contiene la logica di un singolo processo di mining.
     *   **Connessione RPC**: Inizia stabilendo una connessione RPC con il nodo Bitcoin Core utilizzando le credenziali definite in `config.py` (funzione `connect_rpc` da `rpc.py`).
     *   **Ottenimento del Template del Blocco**: Richiede un template di blocco al nodo (`get_block_template` da `rpc.py`). Questo template contiene le transazioni da includere, l'hash del blocco precedente, la difficoltà, ecc.
-    *   **Gestione Dati Witness**: Assicura che tutte le transazioni nel template abbiano i dati witness completi, se necessario (`ensure_witness_data` da `rpc.py`). Questo è fondamentale per il supporto SegWit.
     *   **Costruzione della Transazione Coinbase**: Crea la transazione coinbase (`build_coinbase_transaction` da `block_builder.py`). Questa transazione speciale:
         *   Include la ricompensa del blocco e le commissioni.
         *   Assegna la ricompensa all'indirizzo del miner specificato in `config.py`.
@@ -121,7 +120,6 @@ Ecco una descrizione dettagliata dei principali componenti e del flusso di lavor
         *   `test_rpc_connection`: Verifica la connessione.
         *   `get_best_block_hash`: Ottiene l'hash del blocco più recente.
         *   `get_block_template`: Richiede un template di blocco.
-        *   `ensure_witness_data`: Assicura che i dati witness siano presenti per le transazioni SegWit.
         *   `submit_block`: Invia un blocco minato al nodo.
 
 7.  **`config.py` (Configurazione)**:

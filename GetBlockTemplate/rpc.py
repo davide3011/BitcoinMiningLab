@@ -109,63 +109,6 @@ def get_block_template(rpc):
         # Gestisce eventuali errori durante la richiesta
         log.error("Errore RPC getblocktemplate: %s", e)
         return None
-    
-def ensure_witness_data(rpc, template):
-    """
-    Controlla e aggiorna le transazioni del template con dati completi, inclusi i dati witness.
-    
-    Args:
-        rpc: Connessione RPC al nodo Bitcoin
-        template: Template del blocco da aggiornare
-        
-    Note:
-        Questa funzione è importante per il supporto SegWit (Segregated Witness).
-        Alcune implementazioni di getblocktemplate potrebbero non includere tutti i dati
-        witness necessari per le transazioni. Questa funzione garantisce che ogni transazione
-        nel template abbia i dati completi, recuperandoli dalla mempool o direttamente
-        tramite getrawtransaction quando necessario.
-        
-        Il wtxid (witness txid) è l'identificatore di una transazione che include anche
-        i dati witness, mentre il txid tradizionale non li include.
-    """
-    # Lista per le transazioni corrette
-    corrected_txs = []
-    
-    # Recupera informazioni dettagliate sulla mempool
-    try:
-        # getrawmempool(True) restituisce informazioni dettagliate su tutte le transazioni nella mempool
-        mempool_info = rpc.getrawmempool(True)
-    except Exception as e:
-        log.warning("Impossibile recuperare la mempool dettagliata: %s", e)
-        mempool_info = {}
-    
-    # Elabora ogni transazione nel template
-    for tx in template["transactions"]:
-        txid = tx["txid"]  # ID della transazione
-        raw = tx["data"]   # Dati grezzi della transazione
-        
-        # Cerca il witness txid (wtxid) nella mempool
-        if txid in mempool_info:
-            # Se la transazione è nella mempool, prova a ottenere il wtxid
-            wtxid = mempool_info[txid].get("wtxid", txid)
-        else:
-            # Altrimenti usa il txid normale
-            wtxid = txid  # Usa il txid se il wtxid non è disponibile
-        
-        # Prova a recuperare la transazione completa con i dati witness
-        try:
-            # getrawtransaction recupera i dati grezzi completi di una transazione
-            raw_tx_full = rpc.getrawtransaction(txid, False)
-            if raw_tx_full:
-                raw = raw_tx_full  # Usa i dati completi se disponibili
-        except Exception as e:
-            log.debug("Raw witness mancante per %s: %s", txid, e)
-        
-        # Aggiunge la transazione corretta alla lista
-        corrected_txs.append({"hash": txid, "data": raw})
-    
-    # Sostituisce le transazioni nel template con quelle corrette
-    template["transactions"] = corrected_txs
 
 def submit_block(rpc, serialized_block):
     """

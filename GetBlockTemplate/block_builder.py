@@ -124,7 +124,7 @@ def calculate_merkle_root(coinbase_txid: str, transactions: list[dict]) -> str:
     """Calcola la radice dell'albero di Merkle per una lista di ID di transazioni."""
     # foglie in formato bytes-LE
     tx_hashes = [unhexlify(coinbase_txid)[::-1]] + [
-        unhexlify(tx["hash"])[::-1] for tx in transactions
+        unhexlify(tx["txid"])[::-1] for tx in transactions
     ]
 
     while len(tx_hashes) > 1:
