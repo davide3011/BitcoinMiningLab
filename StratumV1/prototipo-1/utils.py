@@ -10,6 +10,10 @@ def double_sha256(data):
     """Esegue il doppio SHA-256 su un dato."""
     return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
+def is_segwit_tx(raw_hex: str) -> bool:
+    """Ritorna True se la transazione è in formato SegWit."""
+    return len(raw_hex) >= 12 and raw_hex[8:12] == "0001"
+
 def swap_endian(hex_str: str) -> str:
     """Inverte l'ordine dei byte in una stringa esadecimale (cambio endianess)."""
     hex_str = hex_str.strip()
@@ -90,10 +94,10 @@ def modifica_target(template, rpc_conn):
         log.error("DIFFICULTY_FACTOR non può essere negativo. Utilizzo target del template.")
         difficulty_factor = 0  # Forza al target del template
     elif difficulty_factor == 0:
-        log.info(f"Rete {network} rilevata: utilizzo target del template (DIFFICULTY_FACTOR = 0)")
+        log.debug(f"Rete {network} rilevata: utilizzo target del template (DIFFICULTY_FACTOR = 0)")
         difficulty_factor = 0  # Porta pari al template
     else:
-        log.info(f"Rete {network} rilevata: utilizzo DIFFICULTY_FACTOR = {difficulty_factor}")
+        log.debug(f"Rete {network} rilevata: utilizzo DIFFICULTY_FACTOR = {difficulty_factor}")
     
     return calculate_target(template, difficulty_factor, network)
 
@@ -176,15 +180,25 @@ def calculate_merkle_branch(template) -> List[str]:
     # 4) Converto in hex (little-endian) per lo Stratum.
     return [h.hex() for h in branch]
 
-def create_mining_notify_params(template, coinb1, coinb2, merkle_branch):
-    """Crea i parametri per il messaggio mining.notify di Stratum v1."""
+def create_mining_notify_params(prev_hash, version, bits, ntime, coinb1, coinb2, merkle_branch):
+    """Crea i parametri per il messaggio mining.notify di Stratum v1.
+    
+    Args:
+        prev_hash (str): Hash del blocco precedente in formato big-endian
+        version (int): Versione del blocco
+        bits (str): Target di difficoltà in formato hex
+        ntime (int): Timestamp del blocco
+        coinb1 (str): Prima parte della coinbase transaction
+        coinb2 (str): Seconda parte della coinbase transaction
+        merkle_branch (list): Lista degli hash del merkle branch
+    """
     
     job_id = format(int(time.time()*1000) & 0xffffffff, "08x")           # Genera job ID univoco basato sul timestamp
-    prev_hash_le = swap_endian(template["previousblockhash"])            # Hash del blocco precedente convertito in little-endian    
-    version_hex = format(template["version"] & 0xffffffff, "08x")        # Versione del blocco in formato esadecimale
-    bits_hex = template["bits"]                                 
-    ntime_hex = format(template["curtime"], "08x")                         # Timestamp dal template
-    clean_jobs = True                                                    # Flag per indicare che i job precedenti devono essere scartati
+    prev_hash_le = swap_endian(prev_hash)                               # Hash del blocco precedente convertito in little-endian    
+    version_hex = format(version & 0xffffffff, "08x")                   # Versione del blocco in formato esadecimale (4 byte)
+    bits_hex = bits                                                     # Target già in formato hex
+    ntime_hex = format(ntime, "08x")                                    # Timestamp in formato hex (4 byte)
+    clean_jobs = True                                                   # Flag per indicare che i job precedenti devono essere scartati
     
     return {
         'job_id': job_id,

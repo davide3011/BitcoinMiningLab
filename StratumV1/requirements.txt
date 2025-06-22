@@ -1,4 +1,0 @@
-# Dipendenze Python per il client Stratum V1
-python-bitcoinrpc
-base58
-requests

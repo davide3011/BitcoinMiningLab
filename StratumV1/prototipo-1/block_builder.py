@@ -20,16 +20,21 @@ def tx_encode_coinbase_height(height: int) -> str:
         result.append(0x00)
     return f"{len(result):02x}" + result.hex()
 
-# Funzione is_segwit_tx rimossa - non necessaria per blocchi legacy
+def is_segwit_tx(raw_hex: str) -> bool:
+    """Ritorna True se la transazione è in formato SegWit."""
+    return len(raw_hex) >= 12 and raw_hex[8:12] == "0001"
 
 def build_coinbase_transaction(template, miner_script_pubkey, extranonce1, extranonce2, coinbase_message=None):
-    """Costruisce una transazione coinbase legacy per il mining (senza SegWit)."""
+    """Costruisce una transazione coinbase per il mining."""
     height  = template["height"]
     reward  = template["coinbasevalue"]
-    
-    # Forza sempre transazione legacy (no SegWit)
+    wc_raw  = template.get("default_witness_commitment")          # può essere script o sola radice
+    segwit  = bool(wc_raw)
+
     tx_version = "01000000"
     parts = [tx_version]
+    if segwit:
+        parts.append("0001")                                      # marker+flag
 
     # ---- input coinbase ------------------------------------------------
     parts += ["01", "00"*32, "ffffffff"]
@@ -47,23 +52,51 @@ def build_coinbase_transaction(template, miner_script_pubkey, extranonce1, extra
     parts.append(encode_varint(len(script_sig)//2) + script_sig)
     parts.append("ffffffff")                                      # sequence
 
-    # ---- outputs (solo output del miner, no witness commitment) -------
+    # ---- outputs -------------------------------------------------------
     outputs = []
 
     miner_out  = struct.pack("<Q", reward).hex()
     miner_out += encode_varint(len(miner_script_pubkey)//2) + miner_script_pubkey
     outputs.append(miner_out)
 
-    # Non aggiungiamo witness commitment per mantenere la transazione legacy
+    if segwit:
+        # wc_script già pronto se inizia con '6a'
+        if wc_raw.startswith("6a"):
+            wc_script = wc_raw
+        else:                                                     # solo radice: costruisci script
+            wc_script = "6a24aa21a9ed" + wc_raw
+        outputs.append("00"*8 + encode_varint(len(wc_script)//2) + wc_script)
+
     parts.append(encode_varint(len(outputs)) + "".join(outputs))
 
-    # ---- locktime (no witness data) -----------------------------------
+    # ---- witness riservato --------------------------------------------
+    if segwit:
+        parts += ["01", "20", "00"*32]                            # 1 elemento × 32 byte
+
     parts.append("00000000")                                      # locktime
     coinbase_hex = "".join(parts)
 
-    # ---------- txid per transazione legacy ----------------------------
-    txid = double_sha256(unhexlify(coinbase_hex))[::-1].hex()
-    return coinbase_hex, txid
+    # ---------- txid legacy (senza marker/flag + witness) ---------------
+    if segwit:
+        # 1) elimina marker+flag "0001"
+        core = tx_version + coinbase_hex[12:]
+
+        # 2) separa locktime (8 hex alla fine)
+        locktime = core[-8:]                # "00000000"
+        body     = core[:-8]                # tutto tranne il locktime
+
+        # 3) rimuove la witness-stack (68 hex) presente prima del locktime
+        body_wo_wit = body[:-68]            # taglia solo i 34 byte di witness
+
+        # 4) ricompone corpo + locktime
+        core = body_wo_wit + locktime
+    else:
+        core = coinbase_hex
+
+    txid = double_sha256(unhexlify(core))[::-1].hex()            # converte in big-endian
+    hash = double_sha256(unhexlify(coinbase_hex))[::-1].hex()    # converte in big-endian
+
+    return coinbase_hex, txid, hash
 
 def calculate_merkle_root(coinbase_txid: str, transactions: list[dict]) -> str:
     """Calcola la radice dell'albero di Merkle per una lista di ID di transazioni."""
@@ -100,7 +133,7 @@ def build_block_header(version_hex, prev_hash_le, merkle_root_le, timestamp_hex,
 
 def serialize_block(header_hex, coinbase_tx, transactions):
     """Serializza il blocco completo nel formato Bitcoin."""
-    log.info("Serializzazione del blocco avviata")
+    log.debug("Serializzazione del blocco avviata")
     
     num_tx = len(transactions) + 1
     num_tx_hex = encode_varint(num_tx)

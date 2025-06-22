@@ -1,6 +1,7 @@
 from bitcoinrpc.authproxy import AuthServiceProxy
 import config
 import logging
+from typing import Tuple, Optional
 
 # Questo modulo gestisce la comunicazione con il nodo Bitcoin tramite chiamate RPC (Remote Procedure Call)
 # Fornisce funzioni per ottenere dati dalla blockchain, richiedere template di blocchi e inviare blocchi minati
@@ -42,13 +43,55 @@ def test_rpc_connection():
         info = rpc.getblockchaininfo()
         # Mostra le informazioni principali
         # Esito positivo        → INFO
-        log.info("Connessione RPC riuscita – chain=%s, blocchi=%d, difficoltà=%s",
+        log.info("Connessione RPC riuscita - chain=%s, blocchi=%d, difficoltà=%s",
                  info['chain'], info['blocks'], info['difficulty'])
 
     except Exception as e:
         # Stack-trace completo  → EXCEPTION
         log.exception("Errore di connessione RPC")
         raise
+
+def decode_raw_transaction_rpc(raw_hex: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Utilizza la chiamata RPC decoderawtransaction per ottenere txid e wtxid di una transazione.
+    
+    Args:
+        raw_hex (str): Transazione in formato esadecimale
+        
+    Returns:
+        Tuple[Optional[str], Optional[str]]: (txid, wtxid) oppure (None, None) in caso di errore
+        
+    Note:
+        - txid: Transaction ID (identificatore della transazione)
+        - wtxid: Witness Transaction ID (hash che include i dati witness per SegWit)
+        - Per transazioni non-SegWit, txid e wtxid sono identici
+    """
+    try:
+        # Connessione al nodo Bitcoin
+        rpc = connect_rpc()
+        
+        # Decodifica la transazione raw
+        decoded_tx = rpc.decoderawtransaction(raw_hex)
+        
+        # Estrae txid e wtxid dalla risposta
+        txid = decoded_tx.get('txid')
+        wtxid = decoded_tx.get('hash')  # 'hash' è il campo che contiene il wtxid
+        
+        log.debug("Transazione decodificata con successo")
+        log.info("TXID: %s", txid)
+        log.info("WTXID (hash): %s", wtxid)
+        
+        # Verifica se è una transazione SegWit
+        if txid != wtxid:
+            log.debug("✓ Transazione SegWit")
+        else:
+            log.debug("✓ Transazione Legacy")
+            
+        return txid, wtxid
+        
+    except Exception as e:
+        log.error("Errore durante la decodifica della transazione: %s", e)
+        return None, None
 
 def get_best_block_hash(rpc):
     """
@@ -78,92 +121,37 @@ def get_best_block_hash(rpc):
 
 def get_block_template(rpc):
     """
-    Richiede un template di blocco al nodo Bitcoin e lo filtra per blocchi legacy.
+    Richiede un template di blocco al nodo Bitcoin con supporto per le regole SegWit.
     
     Args:
         rpc: Connessione RPC al nodo Bitcoin
         
     Returns:
-        dict: Template del blocco contenente solo transazioni legacy, target di difficoltà e altri metadati,
+        dict: Template del blocco contenente transazioni, target di difficoltà e altri metadati,
               oppure None in caso di errore
         
     Note:
         Il template del blocco contiene tutte le informazioni necessarie per costruire un blocco valido:
-        - Transazioni da includere nel blocco (filtrate per essere solo legacy)
+        - Transazioni da includere nel blocco
         - Hash del blocco precedente
         - Difficoltà target
         - Altezza del blocco
         - Timestamp corrente
         - Valore della ricompensa (coinbase)
         
-        Richiediamo il template con regole SegWit ma filtriamo solo le transazioni legacy.
+        Specificando "segwit" nelle regole, richiediamo un template compatibile con
+        Segregated Witness (BIP141), che permette di includere transazioni SegWit nel blocco.
     """
     try:
-        # Richiede il template con regole SegWit (richiesto dal nodo)
+        # Richiede il template specificando il supporto per SegWit
         tpl = rpc.getblocktemplate({"rules": ["segwit"]})
-        
-        # Filtra solo le transazioni legacy (rimuove quelle SegWit)
-        legacy_transactions = []
-        for tx in tpl.get("transactions", []):
-            tx_data = tx.get("data", "")
-            # Controlla se la transazione è legacy (non SegWit)
-            if not _is_segwit_transaction(tx_data):
-                legacy_transactions.append(tx)
-        
-        # Aggiorna il template con solo transazioni legacy
-        tpl["transactions"] = legacy_transactions
-        
-        log.debug("Template legacy ricevuto - altezza %d, %d tx legacy",
-                  tpl.get("height"), len(legacy_transactions))
+        log.debug("Template ricevuto - altezza %d, %d tx",
+                  tpl.get("height"), len(tpl["transactions"]))
         return tpl
     except Exception as e:
         # Gestisce eventuali errori durante la richiesta
         log.error("Errore RPC getblocktemplate: %s", e)
         return None
-
-def _is_segwit_transaction(raw_hex: str) -> bool:
-    """Controlla se una transazione è in formato SegWit."""
-    if len(raw_hex) < 12:
-        return False
-    # Controlla il marker e flag SegWit (0x00 0x01 dopo la versione)
-    return raw_hex[8:12] == "0001"
-    
-def ensure_legacy_transaction_data(rpc, template):
-    """
-    Controlla e aggiorna le transazioni del template per blocchi legacy.
-    
-    Args:
-        rpc: Connessione RPC al nodo Bitcoin
-        template: Template del blocco da aggiornare
-        
-    Note:
-        Per blocchi legacy, questa funzione garantisce che ogni transazione
-        nel template abbia i dati completi in formato legacy (senza witness data).
-        Recupera i dati delle transazioni dalla mempool o tramite getrawtransaction
-        quando necessario, assicurandosi che siano in formato legacy.
-    """
-    # Lista per le transazioni corrette
-    corrected_txs = []
-    
-    # Elabora ogni transazione nel template
-    for tx in template["transactions"]:
-        txid = tx["txid"]  # ID della transazione
-        raw = tx["data"]   # Dati grezzi della transazione
-        
-        # Prova a recuperare la transazione completa in formato legacy
-        try:
-            # getrawtransaction recupera i dati grezzi completi di una transazione
-            raw_tx_full = rpc.getrawtransaction(txid, False)
-            if raw_tx_full:
-                raw = raw_tx_full  # Usa i dati completi se disponibili
-        except Exception as e:
-            log.debug("Impossibile recuperare dati completi per %s: %s", txid, e)
-        
-        # Aggiunge la transazione corretta alla lista (formato legacy)
-        corrected_txs.append({"hash": txid, "data": raw})
-    
-    # Sostituisce le transazioni nel template con quelle corrette
-    template["transactions"] = corrected_txs
 
 def submit_block(rpc, serialized_block):
     """

@@ -1,15 +1,14 @@
 import config, logging
 from rpc import (
-    connect_rpc, test_rpc_connection, get_block_template, ensure_legacy_transaction_data,
-    submit_block
+    connect_rpc, test_rpc_connection, get_block_template
 )
 from block_builder import (
-    calculate_merkle_root, build_block_header,
-    serialize_block, build_coinbase_transaction
+    build_coinbase_transaction
 )
 
-from utils import (decode_nbits, split_coinbase, calculate_merkle_branch, 
-    create_mining_notify_params, save_job_json, generate_extranonce2, save_template_json
+from utils import (decode_nbits, is_segwit_tx, split_coinbase, calculate_merkle_branch, 
+    create_mining_notify_params, save_job_json, generate_extranonce2, save_template_json,
+    modifica_target, target_to_nbits
     )
 
 log = logging.getLogger(__name__)
@@ -35,20 +34,21 @@ def main():
             return
 
         # STEP 3) Assicurarsi di avere transazioni legacy con dati completi
-        ensure_legacy_transaction_data(rpc_template, template)
-
-        tot_tx = len(template["transactions"])
-        log.info(f"Transazioni legacy nel template: {tot_tx}")
+        tot_tx       = len(template["transactions"])
+        witness_tx   = sum(1 for tx in template["transactions"] if is_segwit_tx(tx["data"]))
+        legacy_tx    = tot_tx - witness_tx
+        log.info(f"Transazioni nel template: totali = {tot_tx}  |  legacy = {legacy_tx}  |  segwit = {witness_tx}")
 
         # STEP 4) COSTRUISCI COINBASE
         miner_info = rpc_template.getaddressinfo(config.WALLET_ADDRESS)
         miner_script_pubkey = miner_info["scriptPubKey"]
         extranonce2 = generate_extranonce2(SIZE_EXTRANONCE2)
-        coinbase_tx, coinbase_txid = build_coinbase_transaction(
+        coinbase_tx, coinbase_txid, coinbase_hash  = build_coinbase_transaction(
             template, miner_script_pubkey, EXTRANONCE1, extranonce2, config.COINBASE_MESSAGE
         )
         log.info(f"Coinbase_hex: {coinbase_tx}")
         log.info(f"Coinbase_txid: {coinbase_txid}")
+        log.info(f"Coinbase_hash: {coinbase_hash}")
         log.info(f"Messaggio nella coinbase: {config.COINBASE_MESSAGE}")
 
         # SPLIT COINBASE
@@ -58,17 +58,30 @@ def main():
         log.info(f"extranonce2 trovato: {extranonce2_found}")
         log.info(f"coinb2: {coinb2}")
 
-        # STEP 5) USA TARGET DAL TEMPLATE
-        nBits_int = int(template["bits"], 16)
-        target = decode_nbits(nBits_int)
-        log.info(f"Target dal template: {target}")
+        # STEP 5) USA TARGET MODIFICATO DAL CONFIG
+        rpc_target = connect_rpc()
+        target = modifica_target(template, rpc_target)
+        log.info(f"Target modificato (DIFFICULTY_FACTOR={config.DIFFICULTY_FACTOR}): {target}")
+        
+        # Converte il target modificato in formato bits
+        modified_bits = target_to_nbits(target)
+        log.info(f"Bits modificati: {modified_bits}")
 
         # STEP 6) CALCOLA MERKLE BRANCH
         merkle_branch = calculate_merkle_branch(template)
         log.info(f"Merkle branch: {merkle_branch}")
 
         # STEP 7) CREARE IL JOB
-        job = create_mining_notify_params(template, coinb1, coinb2, merkle_branch)
+        job = create_mining_notify_params(
+            template["previousblockhash"],  # prev_hash
+            template["version"],            # version
+            modified_bits,                  # bits (target modificato)
+            template["curtime"],            # ntime
+            coinb1,                         # coinb1
+            coinb2,                         # coinb2
+            merkle_branch                   # merkle_branch
+        )
+        
         save_job_json(job)
         log.info(f"Job: {job}")
         
