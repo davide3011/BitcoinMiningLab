@@ -1,157 +1,233 @@
-# Costruzione della Transazione Coinbase
+# Transazione Coinbase per Protocollo Stratum
 
-Questo documento descrive il funzionamento dello script `coinbase.py`, focalizzandosi sulla costruzione della transazione coinbase, un elemento fondamentale nel processo di mining di Bitcoin.
+Questo progetto è un programma di test per la costruzione di transazioni coinbase, sviluppato per essere implementato nel protocollo Stratum. Il software permette di comprendere e testare la creazione di coinbase transactions in modo didattico e personalizzabile.
 
-## 1. Introduzione alla Transazione Coinbase
+## Scopo del Programma
 
-La transazione coinbase è un elemento fondamentale e unico all'interno di ogni blocco della blockchain Bitcoin. Questa particolare transazione occupa sempre la prima posizione nel blocco e presenta caratteristiche che la distinguono da tutte le altre:
+Il programma serve come:
+- **Strumento di test** per la costruzione di coinbase transactions
+- **Base di sviluppo** per l'implementazione nel protocollo Stratum
+- **Strumento didattico** per comprendere il funzionamento delle coinbase transactions
+- **Ambiente di sperimentazione** con parametri completamente customizzabili
 
-1. **Creazione di Nuova Valuta:**
-   - A differenza delle normali transazioni che spostano bitcoin esistenti, la coinbase genera nuovi bitcoin "dal nulla"
-   - Questo processo è noto come *block reward* ed è il meccanismo principale con cui nuovi bitcoin entrano in circolazione
-   - Il reward si dimezza ogni 210.000 blocchi (circa 4 anni) secondo il protocollo di halving
+## Cos'è una Coinbase Transaction
 
-2. **Struttura Unica:**
-   - Non ha UTXO (Unspent Transaction Output) in input
-   - Utilizza un campo speciale chiamato "coinbase" al posto degli input tradizionali
-   - Questo campo può contenere dati arbitrari fino a 100 byte
+### Definizione
+La **coinbase transaction** è la prima transazione di ogni blocco Bitcoin. È una transazione speciale che:
+- **Crea nuovi bitcoin** dal nulla (mining reward)
+- **Raccoglie le commissioni** di tutte le transazioni del blocco
+- **Non ha input validi** (non spende bitcoin esistenti)
+- **Ha un solo output** che va al miner che ha minato il blocco
 
-3. **Ricompense del Mining:**
-   - Assegna il *block reward* al miner che ha risolto con successo il blocco
-   - Include tutte le commissioni (*fees*) delle transazioni contenute nel blocco
-   - La ricompensa totale è quindi: block reward + somma delle fees
+### Elementi di una Coinbase Transaction
 
-4. **Maturità:**
-   - Gli output della coinbase hanno regole speciali
-   - Non possono essere spesi per 100 blocchi
-   - Questa regola previene la spesa di monete in caso di riorganizzazione della blockchain
+#### 1. **Versione (Version)**
+- Campo di 4 byte che specifica la versione del formato della transazione
+- Solitamente `01000000` (versione 1 in little-endian)
 
-Lo script `coinbase.py` automatizza la creazione di questa transazione speciale, recuperando le informazioni necessarie da un nodo Bitcoin tramite RPC (Remote Procedure Call) e assemblando i dati secondo le regole del protocollo Bitcoin.
+#### 2. **Input Count**
+- Sempre `01` (una sola input)
+- Le coinbase hanno sempre esattamente un input
 
-## 2. Configurazione
+#### 3. **Input Coinbase**
+- **Previous Transaction Hash**: 32 byte di zeri (`00000000...`)
+- **Previous Output Index**: 4 byte di `0xFFFFFFFF`
+- **Script Length**: lunghezza variabile del coinbase script
+- **Coinbase Script**: contiene dati arbitrari e obbligatori
+- **Sequence**: solitamente `0xFFFFFFFF`
 
-Lo script richiede alcuni parametri di configurazione iniziali:
+#### 4. **Coinbase Script (Input Script)**
+Il coinbase script contiene:
+- **Altezza del blocco** (BIP34): obbligatoria dal blocco 227,836
+- **Extranonce1 + Extranonce2**: per il mining distribuito (Stratum)
+- **Messaggio personalizzato**: testo arbitrario del miner
+- **Timestamp**: opzionale, per variare il contenuto
 
-*   **RPC Connection:**
-    *   `RPC_USER`, `RPC_PASSWORD`: Credenziali per l'autenticazione RPC al nodo Bitcoin.
-    *   `RPC_HOST`, `RPC_PORT`: Indirizzo IP e porta del nodo Bitcoin.
-*   **Payout:**
-    *   `WALLET_ADDRESS`: L'indirizzo Bitcoin del miner a cui verrà inviato il block reward.
-*   **Coinbase Data:**
-    *   `COINBASE_MESSAGE`: Un messaggio arbitrario che il miner può includere nella transazione (spesso usato per identificare la mining pool).
-    *   `EXTRANONCE1`, `EXTRANONCE2`: Valori utilizzati nel protocollo Stratum per permettere ai miner di variare l'hash della coinbase senza dover richiedere un nuovo `block template` al nodo. `EXTRANONCE1` è solitamente fornito dal server Stratum, mentre `EXTRANONCE2` è iterato dal singolo worker/ASIC.
+#### 5. **Output Count**
+- Numero di output (solitamente 1 o 2)
+- Se presente SegWit, può esserci un output aggiuntivo per il witness commitment
 
-## 3. Struttura della Transazione Coinbase
+#### 6. **Output(s)**
+- **Valore**: ricompensa del blocco + commissioni (in satoshi)
+- **Script Length**: lunghezza dello script di output
+- **Script PubKey**: script che definisce come spendere i bitcoin
 
-Una transazione Bitcoin, inclusa la coinbase, è composta dai seguenti campi principali:
+#### 7. **Witness Commitment** (se SegWit)
+- Output aggiuntivo con valore 0
+- Contiene l'hash delle witness data di tutte le transazioni SegWit
+- Formato: `OP_RETURN + 32 byte di commitment`
 
-| **Campo**          | **Descrizione**                                         |
-|--------------------|---------------------------------------------------------|
-| **Versione**       | Indica le regole di validazione (solitamente 1 o 2)     |
-| **Marker & Flag**  | Presenti solo se SegWit è attivo (0x00, 0x01)           |
-| **Input Count**    | Numero di input (sempre 1 per la coinbase)              |
-| **Inputs**         | Lista degli input                                       |
-| **Output Count**   | Numero di output                                        |
-| **Outputs**        | Lista degli output                                      |
-| **Witness Data**   | Dati di witness (solo se SegWit è attivo)               |
-| **Locktime**       | Solitamente 0 per la coinbase                           |
+#### 8. **Lock Time**
+- Campo di 4 byte, solitamente `00000000`
+- Specifica quando la transazione può essere inclusa in un blocco
 
-Ogni campo è descritto nel dettaglio nelle sezioni successive.
+### Particolarità della Coinbase
 
-### 3.1 Versione (Version)
+#### **Creazione di Valore**
+La coinbase è l'unica transazione che può creare bitcoin dal nulla. Il valore totale dell'output non può superare:
+```
+Ricompensa del blocco + Somma delle commissioni delle transazioni
+```
 
-*   **Valore:** `01000000` (little-endian per 1) o `02000000` (little-endian per 2).
-*   **Scopo:** Indica la versione della transazione. La versione 2 è usata per segnalare il supporto a funzionalità come `CheckSequenceVerify` (BIP 68/112/113).
+#### **BIP34 - Altezza Obbligatoria**
+Dal blocco 227,836, il coinbase script deve iniziare con l'altezza del blocco codificata:
+- L'altezza viene codificata in formato little-endian
+- Preceduta dalla sua lunghezza in byte
+- Esempio: altezza 850000 → `03a0f90c`
 
-### 3.2 Marker & Flag (SegWit)
+#### **Stratum Mining**
+Nel mining distribuito (pool), la coinbase contiene:
+- **Extranonce1**: assegnato dalla pool al miner
+- **Extranonce2**: generato dal miner per variare l'hash
+- Questi valori permettono a ogni miner di lavorare su uno spazio di hash diverso
 
-*   **Valore:** `0001` (Marker `0x00`, Flag `0x01`).
-*   **Scopo:** Presenti *solo* se la transazione include dati di witness (Segregated Witness - SegWit). Indicano che i dati di firma sono separati dal corpo principale della transazione.
-*   **Logica Script:** Lo script aggiunge questi byte se il `block template` fornito dal nodo contiene un `default_witness_commitment`.
+#### **SegWit Compatibility**
+Per blocchi con transazioni SegWit:
+- Deve essere presente un witness commitment
+- Il commitment è calcolato dalle witness data di tutte le transazioni
+- Viene inserito come output aggiuntivo con valore 0
 
-### 3.3 Input (Singolo)
+## Come Funziona il Programma
 
-La transazione coinbase ha sempre **un solo input** con caratteristiche specifiche:
+### Struttura del Progetto
 
-*   **Previous Output (Prevout):**
-    *   `TxID`: `0000...0000` (32 byte nulli). Indica che non spende output precedenti.
-    *   `Index`: `ffffffff` (4 byte). Valore massimo, non applicabile.
-*   **ScriptSig Length:** Lunghezza dello `scriptSig` codificata come VarInt.
-*   **ScriptSig:** Contiene dati specifici invece di una firma:
-    *   **Block Height (BIP-34):** L'altezza del blocco corrente, codificata in modo speciale. È obbligatoria per i blocchi con versione >= 2.
-        *   *Codifica:* Il primo byte indica la lunghezza dei byte successivi che contengono l'altezza in formato little-endian. Esempio: altezza 2 -> `0102`; altezza 256 -> `020001`.
-        *   *Funzione:* `tx_encode_coinbase_height`.
-    *   **Arbitrary Data (Messaggio):** Dati opzionali scelti dal miner (es. `COINBASE_MESSAGE`). Lo script aggiunge `6a` (OP_RETURN) seguito dalla lunghezza del messaggio e dal messaggio stesso in esadecimale.
-    *   **Extranonce:** Valori `EXTRANONCE1` e `EXTRANONCE2` concatenati. Permettono ai miner (specialmente in pool con Stratum) di modificare l'hash della coinbase senza ricostruire l'intera transazione o richiedere un nuovo template.
-    *   *Limite:* La lunghezza totale dello `scriptSig` non deve superare i 100 byte.
-*   **Sequence:** `ffffffff`. Indica che `nLockTime` e `CheckSequenceVerify` non sono applicati a questo input.
+```
+prototipo/
+├── main.py              # Test generale della coinbase
+├── test_coinbase.py     # Test con parametri customizzabili
+├── config.py            # Configurazione RPC e parametri
+├── builder.py           # Costruzione della coinbase transaction
+├── rpc.py               # Comunicazione con il nodo Bitcoin
+├── utils.py             # Funzioni di utilità
+└── requirements.txt     # Dipendenze Python
+```
 
-### 3.4 Output (Uno o Più)
+### File Principali
 
-La coinbase ha almeno un output, ma può averne di più:
+#### **main.py** - Test Generale
+Questo file genera una coinbase transaction corretta per il nodo Bitcoin a cui è collegato, utilizzando alcuni parametri customizzabili:
 
-*   **Output Count:** Numero di output codificato come VarInt.
-*   **Output(s):**
-    1.  **Miner Reward Output:**
-        *   `Value`: Il valore del block reward + fees (in satoshi, little-endian, 8 byte). Ottenuto da `template['coinbasevalue']`.
-        *   `ScriptPubKey Length`: Lunghezza dello `scriptPubKey` come VarInt.
-        *   `ScriptPubKey`: Lo script che definisce le condizioni per spendere questo output (tipicamente P2PKH, P2SH, P2WPKH, P2WSH). Lo script lo ottiene dall'indirizzo `WALLET_ADDRESS` tramite `get_script_pubkey`.
-    2.  **Witness Commitment Output (Opzionale, SegWit):**
-        *   `Value`: `0000000000000000` (0 satoshi).
-        *   `ScriptPubKey Length`: Lunghezza dello `scriptPubKey` come VarInt.
-        *   `ScriptPubKey`: Uno script `OP_RETURN` che contiene l'hash della radice di Merkle dei dati di witness di tutte le transazioni nel blocco. Inizia con `6a24aa21a9ed` seguito dall'hash di 32 byte. Lo script lo prende da `template['default_witness_commitment']`.
+1. **Connessione RPC**: Si connette al nodo Bitcoin
+2. **Richiesta Template**: Ottiene un template di blocco reale
+3. **Analisi Transazioni**: Conta transazioni legacy e SegWit
+4. **Modifica Difficoltà**: Applica un fattore di difficoltà personalizzato
+5. **Costruzione Coinbase**: Crea la coinbase transaction corretta
+6. **Validazione**: Verifica la correttezza della coinbase generata
 
-### 3.5 Witness Data (SegWit)
+```bash
+python main.py
+```
 
-*   **Valore:** `01` (numero di elementi stack) + `20` (lunghezza elemento) + `00...00` (32 byte nulli).
-*   **Scopo:** Placeholder per i dati di witness della coinbase. Poiché la coinbase non spende output precedenti, non ha firme reali. Questo campo è richiesto per coerenza se SegWit è attivo.
+#### **test_coinbase.py** - Test Personalizzato
+Questo file permette di testare la coinbase con parametri completamente customizzabili:
 
-### 3.6 Locktime
+**Parametri Configurabili:**
+```python
+TEMPLATE = {
+    "height": 850000,                    # Altezza del blocco
+    "coinbasevalue": 625000000,          # Ricompensa in satoshi
+    "default_witness_commitment": "...", # Commitment SegWit
+    "curtime": 1703001600,               # Timestamp
+    "bits": "17034a7d"                   # Difficoltà target
+}
 
-*   **Valore:** `00000000`.
-*   **Scopo:** Generalmente impostato a 0 per le transazioni coinbase.
+EXTRANONCE1 = "1234567890abcdef"         # Extranonce1 personalizzato
+EXTRANONCE2 = "12345678"                 # Extranonce2 personalizzato
+COINBASE_MESSAGE = "/Ciao sono Davide/"  # Messaggio personalizzato
+```
 
-## 4. Split della Coinbase per Stratum
+```bash
+python test_coinbase.py
+```
 
-Il protocollo Stratum, usato nel mining in pool, richiede che la transazione coinbase sia divisa in due parti (`coinb1` e `coinb2`) attorno agli extranonce. Questo permette al server Stratum di inviare `coinb1` e `coinb2` una sola volta, e poi solo `extranonce1` aggiornato, mentre il miner itera su `extranonce2`.
+### Configurazione
 
-*   `coinb1`: Parte della coinbase *prima* di `EXTRANONCE1`.
-*   `coinb2`: Parte della coinbase *dopo* `EXTRANONCE2`.
+#### **config.py**
+Contiene tutti i parametri di configurazione:
 
-La funzione `split_coinbase` esegue questo split, assicurandosi che `EXTRANONCE1` e `EXTRANONCE2` siano presenti e contigui nella coinbase generata.
+```python
+# Connessione RPC al nodo Bitcoin
+RPC_USER = "username"
+RPC_PASSWORD = "password"
+RPC_HOST = "IP_ADDRESS"
+RPC_PORT = 8332
 
-## 5. Calcolo del Transaction ID (TxID)
+# Indirizzo del miner (dove vanno i bitcoin)
+WALLET_ADDRESS = "bcrt1q..."
 
-Il TxID è l'identificatore univoco di una transazione. Si calcola applicando due volte l'hash SHA-256 ai dati serializzati della transazione e invertendo l'ordine dei byte (little-endian).
+# Fattore di difficoltà (0 = difficoltà originale)
+DIFFICULTY_FACTOR = 0
 
-*   **Legacy TxID:** Calcolato sull'intera transazione serializzata.
-*   **SegWit TxID (wtxid):** Calcolato sulla transazione serializzata *inclusi* Marker, Flag e Witness Data.
-*   **TxID usato nel Block Header:** Per le transazioni SegWit, il TxID incluso nella radice di Merkle del blocco è calcolato sulla transazione *senza* Marker, Flag e Witness Data. Lo script calcola questo TxID legacy anche per le transazioni SegWit rimuovendo le parti pertinenti prima dell'hashing.
+# Messaggio personalizzato nella coinbase
+COINBASE_MESSAGE = "/Ciao sono Davide/"
+```
 
-Lo script calcola e restituisce il TxID legacy (`txid`).
+### Moduli di Supporto
 
-## 6. Dipendenze
+#### **builder.py**
+- Costruisce la coinbase transaction completa
+- Gestisce la codifica BIP34 dell'altezza
+- Supporta transazioni SegWit e legacy
+- Calcola correttamente tutti i campi
 
-*   `python-bitcoinrpc`: Per comunicare con il nodo Bitcoin. Installare con `pip install python-bitcoinrpc`.
+#### **rpc.py**
+- Gestisce la comunicazione con il nodo Bitcoin
+- Richiede template di blocco
+- Supporta autenticazione RPC
 
-## 7. Utilizzo
+#### **utils.py**
+- Funzioni di utilità per hash e codifiche
+- Gestione endianness
+- Generazione di extranonce
+- Salvataggio template per debug
 
-Eseguire lo script Python (`python coinbase.py`). Si connetterà al nodo Bitcoin specificato, otterrà un `block template`, costruirà la transazione coinbase e stamperà:
+## Installazione e Utilizzo
 
-*   Dettagli del template (altezza, reward, SegWit).
-*   Dimensioni degli extranonce.
-*   La transazione coinbase completa in formato esadecimale (`coinbase_hex`).
-*   Il TxID legacy della coinbase (`coinbase_txid`).
-*   Le parti `coinb1`, `extranonce1`, `extranonce2`, `coinb2` per l'uso con Stratum.
+### Prerequisiti
+- Python 3.8+
+- Nodo Bitcoin in esecuzione
+- Accesso RPC configurato
 
-## 8. Riferimenti
+### Installazione
+```bash
+# Clona o scarica il progetto
+cd prototipo
 
-- [BIP-34: Block v2, Height in Coinbase](https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki)
-- [BIP-141: Segregated Witness](https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki) 
-- [Bitcoin Developer Reference](https://developer.bitcoin.org/reference/)
-- [Bitcoin Core Source Code](https://github.com/bitcoin/bitcoin)
-- [Stratum Mining Protocol](https://en.bitcoin.it/wiki/Stratum_mining_protocol)
+# Installa le dipendenze
+pip install -r requirements.txt
+```
 
-## 9. Licenza
+### Configurazione
+1. Modifica `config.py` con i tuoi parametri RPC
+2. Imposta il tuo indirizzo wallet
+3. Personalizza i messaggi e parametri
 
-Questo script è rilasciato sotto la licenza MIT.
+### Esecuzione
+```bash
+# Test generale con template reale
+python main.py
+
+# Test con parametri personalizzati
+python test_coinbase.py
+```
+
+### Output Esempio
+```
+2024-01-01 12:00:00 | INFO | Transazioni nel template: totali = 150 | legacy = 120 | segwit = 30
+2024-01-01 12:00:00 | INFO | Target modificato (DIFFICULTY_FACTOR=0): 0000000000034a7d...
+2024-01-01 12:00:00 | INFO | Coinbase costruita: 250 byte
+2024-01-01 12:00:00 | INFO | TXID: a1b2c3d4e5f6...
+2024-01-01 12:00:00 | INFO | Hash: a1b2c3d4e5f6...
+```
+
+## Sviluppi Futuri
+
+Questo prototipo può essere esteso per:
+- Implementazione completa del protocollo Stratum
+- Mining pool software
+- Test più avanzati per il protocollo Stratum
+- Simulatori di mining educativi
+
+---
+
+**Nota**: Questo è un software educativo e di test. Per uso in produzione, sono necessarie ulteriori validazioni e ottimizzazioni di sicurezza.
