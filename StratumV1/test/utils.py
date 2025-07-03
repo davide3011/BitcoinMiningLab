@@ -23,6 +23,34 @@ def swap_endian(hex_str: str) -> str:
 
     return bytes.fromhex(hex_str)[::-1].hex()
 
+def swap_prevhash(hash_hex: str) -> str:
+    """
+    Converte un hash di blocco dal formato big-endian (come mostrato da Bitcoin Core)
+    al formato usato in Stratum v1, e viceversa.
+
+    Parametri
+    ----------
+    hash_hex : str
+        Stringa esadecimale (64 o 32 byte = 256 bit). Eventuale prefisso '0x' viene ignorato.
+
+    Ritorna
+    -------
+    str
+        Lo stesso hash con l'ordine delle parole da 32 bit invertito.
+        Applicare la funzione due volte restituisce il valore originale.
+    """
+    # normalizza
+    h = hash_hex.strip().lower()
+    if h.startswith("0x"):
+        h = h[2:]
+
+    if len(h) % 8 != 0:
+        raise ValueError("La lunghezza deve essere un multiplo di 8 cifre esadecimali (4 byte).")
+
+    # suddividi in parole da 4 byte, inverti l’ordine, ricomponi
+    words = [h[i:i + 8] for i in range(0, len(h), 8)]
+    return "".join(reversed(words))
+
 def encode_varint(value):
     """Codifica un numero come VarInt secondo il protocollo Bitcoin."""
     thresholds = [(0xfd, ""), (0xffff, "fd"), (0xffffffff, "fe"), (0xffffffffffffffff, "ff")]
@@ -116,6 +144,24 @@ def generate_extranonce2(size_bytes):
     log.info(f"Extranonce2 generato: {extranonce2_hex} ({size_bytes} byte)")
     return extranonce2_hex
 
+def strip_witness(raw_hex: str) -> str:
+    """
+    Rimuove marker+flag (0001) e la parte witness da una transazione
+    segwit, restituendo la serializzazione legacy.  Se la tx è già
+    legacy la restituisce invariata.
+    """
+    # se non c’è il marker non dobbiamo fare nulla
+    if len(raw_hex) < 12 or raw_hex[8:12] != "0001":
+        return raw_hex
+
+    version  = raw_hex[:8]       # 4 byte
+    body     = raw_hex[12:-8]    # esclude marker+flag all’inizio e lock-time alla fine
+    locktime = raw_hex[-8:]
+
+    # nel coinbase witness ci sono sempre 34 byte: 01 20 + 32 zeri
+    legacy_body = body[:-68]     # 34 byte × 2 = 68 hex
+    return version + legacy_body + locktime
+
 def split_coinbase(coinbase_hex: str, ex1: str, ex2: str) -> Tuple[str, str, str, str]:
     """Restituisce (coinb1, extranonce1, extranonce2, coinb2).
 
@@ -194,9 +240,9 @@ def create_mining_notify_params(prev_hash, version, bits, ntime, coinb1, coinb2,
     """
     
     job_id = format(int(time.time()*1000) & 0xffffffff, "08x")           # Genera job ID univoco basato sul timestamp
-    prev_hash_le = swap_endian(prev_hash)                               # Hash del blocco precedente convertito in little-endian    
+    prev_hash_le = swap_prevhash(prev_hash)                               # Hash del blocco precedente convertito in little-endian    
     version_hex = format(version & 0xffffffff, "08x")                   # Versione del blocco in formato esadecimale (4 byte)
-    bits_hex = bits                                                     # Target già in formato hex
+    bits_hex = (bits)                                                     # Target già in formato hex
     ntime_hex = format(ntime, "08x")                                    # Timestamp in formato hex (4 byte)
     clean_jobs = True                                                   # Flag per indicare che i job precedenti devono essere scartati
     

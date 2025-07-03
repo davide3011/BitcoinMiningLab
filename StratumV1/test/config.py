@@ -1,7 +1,7 @@
 """
-Modulo di configurazione per il nodo Bitcoin e il processo di mining.
-Definisce le variabili necessarie per la connessione RPC, l'indirizzo del wallet,
-il fattore di difficoltà e la modalità di calcolo del nonce.
+Modulo di configurazione.
+Definisce le variabili necessarie per la connessione RPC, 
+l'indirizzo del wallet e il fattore di difficoltà.
 """
 
 # ---------------------------
@@ -21,8 +21,6 @@ WALLET_ADDRESS = "..."                   # Indirizzo del wallet del miner
 # Parametri Mining
 # ---------------------------
 DIFFICULTY_FACTOR = 0                    # Fattore per modificare la difficoltà di mining
-
-TIMESTAMP_UPDATE_INTERVAL = 30           # Intervallo in secondi per l'aggiornamento del timestamp durante il mining
 
 # ---------------------------
 # Messaggio Coinbase

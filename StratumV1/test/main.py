@@ -8,7 +8,7 @@ from block_builder import (
 
 from utils import (decode_nbits, is_segwit_tx, split_coinbase, calculate_merkle_branch, 
     create_mining_notify_params, save_job_json, generate_extranonce2, save_template_json,
-    modifica_target, target_to_nbits
+    modifica_target, target_to_nbits, strip_witness
     )
 
 log = logging.getLogger(__name__)
@@ -39,33 +39,44 @@ def main():
         legacy_tx    = tot_tx - witness_tx
         log.info(f"Transazioni nel template: totali = {tot_tx}  |  legacy = {legacy_tx}  |  segwit = {witness_tx}")
 
-        # STEP 4) COSTRUISCI COINBASE
+        # STEP 4) USA TARGET MODIFICATO DAL CONFIG
+        rpc_target = connect_rpc()
+        target = modifica_target(template, rpc_target)
+        log.info(f"Target modificato (DIFFICULTY_FACTOR={config.DIFFICULTY_FACTOR}): {target}")
+        
+        modified_bits = target_to_nbits(target)   # Converte il target modificato in formato bits
+        log.info(f"Bits modificati: {modified_bits}")
+        
+        # STEP 5) COSTRUZIONE COINBASE
         miner_info = rpc_template.getaddressinfo(config.WALLET_ADDRESS)
         miner_script_pubkey = miner_info["scriptPubKey"]
         extranonce2 = generate_extranonce2(SIZE_EXTRANONCE2)
+        ntime = template["curtime"]
+        bits = modified_bits
+
         coinbase_tx, coinbase_txid, coinbase_hash  = build_coinbase_transaction(
-            template, miner_script_pubkey, EXTRANONCE1, extranonce2, config.COINBASE_MESSAGE
+            template, miner_script_pubkey, EXTRANONCE1, extranonce2, ntime, bits, 
+            config.COINBASE_MESSAGE
         )
-        log.info(f"Coinbase_hex: {coinbase_tx}")
+
+        log.info(f"Coinbase witness: {coinbase_tx}")
         log.info(f"Coinbase_txid: {coinbase_txid}")
         log.info(f"Coinbase_hash: {coinbase_hash}")
         log.info(f"Messaggio nella coinbase: {config.COINBASE_MESSAGE}")
 
         # SPLIT COINBASE
-        coinb1, extranonce1_found, extranonce2_found, coinb2 = split_coinbase(coinbase_tx, EXTRANONCE1, extranonce2)
+        
+        coinbase_tx_legacy = strip_witness(coinbase_tx)
+        
+        log.info(f"Coinbase legacy: {coinbase_tx_legacy}")
+        
+        coinb1, extranonce1_found, extranonce2_found, coinb2 = split_coinbase(coinbase_tx_legacy, EXTRANONCE1, extranonce2)
         log.info(f"coinb1: {coinb1}")
         log.info(f"extranonce1 trovato: {extranonce1_found}")
         log.info(f"extranonce2 trovato: {extranonce2_found}")
         log.info(f"coinb2: {coinb2}")
 
-        # STEP 5) USA TARGET MODIFICATO DAL CONFIG
-        rpc_target = connect_rpc()
-        target = modifica_target(template, rpc_target)
-        log.info(f"Target modificato (DIFFICULTY_FACTOR={config.DIFFICULTY_FACTOR}): {target}")
         
-        # Converte il target modificato in formato bits
-        modified_bits = target_to_nbits(target)
-        log.info(f"Bits modificati: {modified_bits}")
 
         # STEP 6) CALCOLA MERKLE BRANCH
         merkle_branch = calculate_merkle_branch(template)
